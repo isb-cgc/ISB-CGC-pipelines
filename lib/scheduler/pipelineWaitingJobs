@@ -1,0 +1,50 @@
+#!/usr/bin/env python
+import os
+import shutil
+import argparse
+import pyinotify
+from ..pipelines.utils import PipelinesConfig, PipelinesConfigUpdateHandler, PipelineSchedulerUtils, PipelineDbUtils
+
+# NOTE: this process should be started up as part of the scheduling system (managed by Supervisor)
+
+
+class WaitingJobsHandler(pyinotify.ProcessEvent):
+	def my_init(self, config=None):
+		self._config = config
+		self._pipelineDbUtils = PipelineDbUtils(self._config)
+
+	def process_IN_CREATE(self, event):
+		jobInfo = self._pipelineDbUtils.getJobInfo(select=["pipeline_name", "tag"], where={"job_id": event.name})
+		PipelineSchedulerUtils.writeStdout("Scheduling job {pipeline}-{tag} ... ".format(pipeline=jobInfo[0].pipeline_name, tag=jobInfo[0].tag))
+		shutil.copy(event.pathname, os.path.join(self._config.pipelines_home, "RUNNING", event.name))
+		os.remove(event.pathname)
+
+
+def watch(args):
+	config = PipelinesConfig(args.config)
+	PipelineSchedulerUtils.writeStdout("Watching WAITING jobs...")
+
+	jobStatusManager = pyinotify.WatchManager()
+	jobStatusNotifier = pyinotify.Notifier(jobStatusManager)
+
+	jobStatusManager.add_watch(config.path, pyinotify.IN_CLOSE_WRITE, proc_fun=PipelinesConfigUpdateHandler(config=config))
+	jobStatusManager.add_watch(os.path.join(config.pipelines_home, "WAITING"), pyinotify.IN_CREATE, proc_fun=WaitingJobsHandler(config=config))
+
+	jobStatusNotifier.loop()
+
+if __name__ == "__main__":
+	parser = argparse.ArgumentParser()
+	parser.add_argument("--config")
+
+	args = parser.parse_args()
+
+	watch(args)
+
+
+
+
+
+		
+
+
+

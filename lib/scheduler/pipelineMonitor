@@ -1,0 +1,188 @@
+#!/usr/bin/env python
+import os
+import re
+import shutil
+import httplib2
+import argparse
+import pyinotify
+import subprocess
+import dateutil.parser
+from time import time, sleep
+from apiclient.discovery import build
+from googleapiclient.errors import HttpError
+from oauth2client.client import GoogleCredentials
+from ..pipelines.utils import PipelinesConfig, PipelinesConfigUpdateHandler, PipelineSchedulerUtils, PipelineDbUtils
+
+
+class MonitoringHandler(pyinotify.ProcessEvent):
+	def my_init(self, config=None):
+		self._config = config
+		self._pipelineDbUtils = PipelineDbUtils(self._config)
+		self._credentials = GoogleCredentials.get_application_default()
+		self._http = self._credentials.authorize(httplib2.Http())
+
+		if self._credentials.access_token_expired:
+			self.credentials.refresh(self._http)
+
+		self._pipelineService = build('genomics', 'v1alpha2', http=self._http)
+
+	def _renameGcsLogs(self, jobId, gcsLogsPath, operationId, pipelineJobName):
+		warnings = []
+		updates = []
+		try:
+			subprocess.check_call(["gsutil", "mv", "{gcsLogsPath}/{original}-stderr.log".format(gcsLogsPath=gcsLogsPath, original=operationId.split('/')[1]), "{gcsLogsPath}/{tag}-stderr.log".format(gcsLogsPath=gcsLogsPath, tag=pipelineJobName)])
+		except subprocess.CalledProcessError as e:
+			warnings.append("WARNING: Couldn't rename stderr logs!: {reason}".format(reason=e))
+
+		else:
+			self._pipelineDbUtils.updateJob(jobId, setValues={"stderr_log": "{tag}-stderr.log".format(tag=pipelineJobName)})
+
+		try:
+			subprocess.check_call(["gsutil", "mv", "{gcsLogsPath}/{original}-stdout.log".format(gcsLogsPath=gcsLogsPath, original=operationId.split('/')[1]), "{gcsLogsPath}/{tag}-stdout.log".format(gcsLogsPath=gcsLogsPath, tag=pipelineJobName)])
+		except subprocess.CalledProcessError as e:
+			warnings.append("WARNING: Couldn't rename stdout logs!: {reason}".format(reason=e))
+
+		else:
+			self._pipelineDbUtils.updateJob(jobId, setValues={"stdout_log": "{tag}-stdout.log".format(tag=pipelineJobName)})
+
+		try:
+			subprocess.check_call(["gsutil", "mv", "{gcsLogsPath}/{original}.log".format(gcsLogsPath=gcsLogsPath, original=operationId.split('/')[1]), "{gcsLogsPath}/{tag}.log".format(gcsLogsPath=gcsLogsPath, tag=pipelineJobName)])
+		except subprocess.CalledProcessError as e:
+			warnings.append("WARNING: Couldn't rename logs!: {reason}".format(reason=e))
+
+		return warnings
+
+	def _updateTimeInfo(self, jobId, status):
+		processingStart = None
+		processingTime = None
+		for i, e in enumerate(status["metadata"]["events"]):
+			if e["description"] == "running-docker":
+				processingStart = status["metadata"]["events"][i]["startTime"]
+				break
+
+		if processingStart is not None:
+			processingTimeDelta = dateutil.parser.parse(status["metadata"]["endTime"]) - dateutil.parser.parse(processingStart)
+			processingTime = processingTimeDelta.total_seconds()
+
+		self._pipelineDbUtils.updateJob(jobId, setValues={"end_time": status["metadata"]["endTime"], "processing_time": processingTime})
+
+	def process_IN_CREATE(self, event):
+		# event.pathname -> <pipelines_home>/MONITORING/start
+		sleep(float(self._config.polling_interval))
+		
+		operationIds = [x.operation_id for x in self._pipelineDbUtils.getJobInfo(select=["operation_id"], where={"current_status": "RUNNING"})]
+
+		while len(operationIds) > 0:
+			createTime = int(time()) - (24*60*60)  # will collect info about all jobs within the last 24 hours, and will ignore operations whose ids are not in the database
+			operationsFilter = "projectId = {projectId} AND createTime >= {createTime}".format(createTime=createTime, projectId=self._config.project_id)
+
+			if self._credentials.access_token_expired:
+				self._credentials.refresh(self._http)
+
+			try:
+				operationsInfo = self._pipelineService.operations().list(name="operations", filter=operationsFilter, pageSize=self._config.max_running_jobs).execute() # TODO: implement handling lists longer than 2048
+
+			except HttpError as e:
+				PipelineSchedulerUtils.writeStdout("WARNING: couldn't get operations list : {reason}".format(reason=e))
+				continue
+
+			operationsToCheck = [op for op in operationsInfo["operations"] if op["name"] in operationIds]
+
+			PipelineSchedulerUtils.writeStdout("Checking operations:\t{ops}".format(ops=" ,".join(operationIds)))
+			PipelineSchedulerUtils.writeStdout("Found {n} operations to check".format(n=len(operationsToCheck)))
+			
+			for status in operationsToCheck:
+				stderrLog = os.path.join(status["metadata"]["request"]["pipelineArgs"]["logging"]["gcsPath"], "{op}-stderr.log".format(op=status["name"].split('/')[1]))
+				jobInfo = self._pipelineDbUtils.getJobInfo(select=["job_id", "pipeline_name", "tag", "create_time"], where={"operation_id": status["name"]})
+
+				if status["done"] and "error" not in status.keys():
+					PipelineSchedulerUtils.writeStdout("PIPELINE SUCCEEDED (pipeline: {pipeline}, tag: {tag}, operation: {operation})".format(pipeline=jobInfo[0].pipeline_name, tag=jobInfo[0].tag, operation=status["name"]))
+			
+					for w in self._renameGcsLogs(jobInfo[0].job_id, status["metadata"]["request"]["pipelineArgs"]["logging"]["gcsPath"], status["name"], "{pipeline}-{tag}".format(pipeline=jobInfo[0].pipeline_name, tag=jobInfo[0].tag)):
+						PipelineSchedulerUtils.writeStdout("{warning}".format(warning=w))
+
+					self._updateTimeInfo(jobInfo[0].job_id, status)
+					self._pipelineDbUtils.updateJob(jobInfo[0].job_id, setValues={"current_status": "SUCCEEDED"})
+					
+					shutil.copy(os.path.join(self._config.pipelines_home, "RUNNING", str(jobInfo[0].job_id)), os.path.join(self._config.pipelines_home, "SUCCEEDED", str(jobInfo[0].job_id)))
+					os.remove(os.path.join(self._config.pipelines_home, "RUNNING", str(jobInfo[0].job_id)))
+
+				elif "error" in status.keys():
+					if re.search("13:.*", status["error"]["message"]) or re.search("14:.*", status["error"]["message"]):
+						PipelineSchedulerUtils.writeStdout("PIPELINE PREEMPTED ({job})".format(job="{pipeline}-{tag}".format(pipeline=jobInfo[0].pipeline_name, tag=jobInfo[0].tag)))
+						
+						self._pipelineDbUtils.updateJob(jobInfo[0].job_id, setValues={"current_status": "PREEMTPED", "preemptions": "preemptions + 1"})
+
+						shutil.copy(os.path.join(self._config.pipelines_home, "RUNNING", str(jobInfo[0].job_id)), os.path.join(self._config.pipelines_home, "PREEMPTED", str(jobInfo[0].job_id)))
+						os.remove(os.path.join(self._config.pipelines_home, "RUNNING", str(jobInfo[0].job_id)))
+
+					else:
+						PipelineSchedulerUtils.writeStdout("PIPELINE FAILED ({job}): {reason}".format(job="{pipeline}-{tag}".format(pipeline=jobInfo[0].pipeline_name, tag=jobInfo[0].tag), reason=status["error"]["message"]))
+						self._updateTimeInfo(jobInfo[0].job_id, status)
+						self._pipelineDbUtils.updateJob(jobInfo[0].job_id, setValues={"current_status": "FAILED"})
+				
+						shutil.copy(os.path.join(self._config.pipelines_home, "RUNNING", str(jobInfo[0].job_id)), os.path.join(self._config.pipelines_home, "FAILED", str(jobInfo[0].job_id)))
+						os.remove(os.path.join(self._config.pipelines_home, "RUNNING", str(jobInfo[0].job_id)))
+
+					for w in self._renameGcsLogs(jobInfo[0].job_id, status["metadata"]["request"]["pipelineArgs"]["logging"]["gcsPath"], status["name"], "{pipeline}-{tag}".format(pipeline=jobInfo[0].pipeline_name, tag=jobInfo[0].tag)):
+						PipelineSchedulerUtils.writeStdout("{warning}".format(warning=w))
+
+				else:
+					try:
+						logFile = subprocess.check_output(["gsutil", "cat", stderrLog])
+					except subprocess.CalledProcessError as e:
+						PipelineSchedulerUtils.writeStderr("ERROR : couldn't read the log file for operation {o} : {reason}".format(o=status["name"], reason=e))
+					else:
+						PipelineSchedulerUtils.writeStdout("Reading log file {operation}-stderr.log ...".format(operation=status["name"].split('/')[1]))
+
+						PipelineSchedulerUtils.writeStdout("Contents of {operation}-stderr.log: {contents}".format(operation=status["name"].split('/')[1], contents=logFile))
+			
+						if re.search('Exception', logFile):
+							status = self._pipelineService.operations().get(name=status["name"]).execute()
+							while not status["done"]:
+								sleep(5)
+								PipelineSchedulerUtils.writeStdout("Attempting to cancel operation {operation} ...".format(operation=status["name"]))
+
+								self._pipelineService.operations().cancel(name=status["name"], body={}).execute()
+								sleep(5)
+
+								PipelineSchedulerUtils.writeStdout("Checking status of cancellation ({operation}) ...".format(operation=status["name"]))
+								status = self._pipelineService.operations().get(name=status["name"]).execute()
+
+							PipelineSchedulerUtils.writeStdout("Cancelled operation {operation} ... :".format(operation=status["name"]))
+							PipelineSchedulerUtils.writeStdout("PIPELINE FAILED ({job}): {reason}".format(job="{pipeline}-{tag}".format(pipeline=jobInfo[0].pipeline_name, tag=jobInfo[0].tag), reason=status["error"]["message"]))
+							self._updateTimeInfo(jobInfo[0].job_id, status)
+							self._pipelineDbUtils.updateJob(jobInfo[0].job_id, setValues={"current_status": "FAILED"})
+
+							shutil.copy(os.path.join(self._config.pipelines_home, "RUNNING", str(jobInfo[0].job_id)), os.path.join(self._config.pipelines_home, "FAILED", str(jobInfo[0].job_id)))
+							os.remove(os.path.join(self._config.pipelines_home, "RUNNING", str(jobInfo[0].job_id)))
+							
+							for w in self._renameGcsLogs(jobInfo[0].job_id, status["metadata"]["request"]["pipelineArgs"]["logging"]["gcsPath"], status["name"], "{pipeline}-{tag}".format(pipeline=jobInfo[0].pipeline_name, tag=jobInfo[0].tag)):
+								PipelineSchedulerUtils.writeStdout("{warning}".format(warning=w))
+
+			operationIds = [x.operation_id for x in self._pipelineDbUtils.getJobInfo(select=["operation_id"], where={"current_status": "RUNNING"})]
+
+		PipelineSchedulerUtils.writeStdout("Shutting down ...")
+		os.remove(os.path.join(self._config.pipelines_home, "MONITOR", "start"))
+
+
+def watch(args):
+	config = PipelinesConfig(args.config)
+
+	PipelineSchedulerUtils.writeStdout("Monitoring jobs...")
+
+	jobStatusManager = pyinotify.WatchManager()
+	jobStatusNotifier = pyinotify.Notifier(jobStatusManager)
+
+	jobStatusManager.add_watch(config.path, pyinotify.IN_CLOSE_WRITE, proc_fun=PipelinesConfigUpdateHandler(config=config))
+	jobStatusManager.add_watch(os.path.join(config.pipelines_home, "MONITOR"), pyinotify.IN_CREATE, proc_fun=MonitoringHandler(config=config))
+	jobStatusNotifier.loop()
+
+if __name__ == "__main__":
+	parser = argparse.ArgumentParser()
+	parser.add_argument("--config")
+
+	args = parser.parse_args()
+
+	watch(args)
+
