@@ -232,7 +232,7 @@ def getJobLogs(args, config):
 
 
 def getJobsList(args, unknown, config):
-	header = "JOBID%sPIPELINE%sTAG%sSTATUS%sCREATE TIME%sPREEMPTIONS\n"
+	header = "JOBID%sPIPELINE%sOPERATION ID%sTAG%sSTATUS%sCREATE TIME%sPREEMPTIONS\n"
 	jobStatusString = "{jobId}%s{pipeline}%s{tag}%s{status}%s{createTime}%s{preemptions}\n"
 	
 	pipelineDbUtils = PipelineDbUtils(config)
@@ -267,13 +267,14 @@ def getJobsList(args, unknown, config):
 	def fieldPadding(maxLen, actualLen):
 		return ''.join([' ' for x in range(maxLen - actualLen + 4)])
 
-	maxJobIdLen = max([len(str(x.job_id)) for x in jobs])
-	maxPipelineLen = max([len(x.pipeline_name) for x in jobs])
-	maxStatusLen = max([len(x.current_status) for x in jobs])
-	maxTagLen = max([len(x.tag) for x in jobs])
-	maxCreateTimeLen = max([len(x.create_time) for x in jobs])
+	maxJobIdLen = max([len(str(x.job_id)) for x in jobs].append(len("JOBID")))
+	maxPipelineLen = max([len(x.pipeline_name) for x in jobs].append(len("PIPELINE")))
+	maxOperationIdLen = max([len(x.operation_id.split('/')[1]) for x in jobs].append(len("OPERATION ID")))
+	maxStatusLen = max([len(x.current_status) for x in jobs].append(len("STATUS")))
+	maxTagLen = max([len(x.tag) for x in jobs].append(len("TAG")))
+	maxCreateTimeLen = max([len(x.create_time) for x in jobs].append(len("CREATE TIME")))
 
-	print header % (fieldPadding(maxJobIdLen, 5), fieldPadding(maxPipelineLen, 8), fieldPadding(maxTagLen, 3), fieldPadding(maxStatusLen, 6), fieldPadding(maxCreateTimeLen, 11))
+	print header % (fieldPadding(maxJobIdLen, len("JOBID")), fieldPadding(maxPipelineLen, len("PIPELINE")), fieldPadding(maxOperationIdLen, len("OPERATION ID")), fieldPadding(maxTagLen, len("TAG")), fieldPadding(maxStatusLen, len("STATUS")), fieldPadding(maxCreateTimeLen, len("CREATE TIME")))
 	for j in jobs:
 		print jobStatusString.format(jobId=j.job_id, pipeline=j.pipeline_name, tag=j.tag, status=j.current_status, createTime=j.create_time, preemptions=j.preemptions) % (fieldPadding(maxJobIdLen, len(str(j.job_id))), fieldPadding(maxPipelineLen, len(j.pipeline_name)), fieldPadding(maxTagLen, len(j.tag)), fieldPadding(maxStatusLen, len(j.current_status)), fieldPadding(maxCreateTimeLen, len(j.create_time)))
 
