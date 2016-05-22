@@ -7,7 +7,7 @@ import argparse
 import subprocess
 from ConfigParser import SafeConfigParser
 from pipelines.builder import PipelineBuilder
-from pipelines.utils import PipelinesConfig, PipelineDbUtils
+from pipelines.utils import PipelinesConfig, PipelineDbUtils, PipelineSchedulerUtils
 
 MODULE_PATH = "/usr/local/ISB-CGC-pipelines/lib"  # TODO: move path to configuration file
 SCHEMA_GENERATORS = ['.'.join(x.split('.')[0:-1]) for x in os.listdir(os.path.join(MODULE_PATH, "schema_generators")) if not re.match('^_.*$', x) and not re.match('^.*~$', x)]
@@ -272,6 +272,7 @@ def getJobsList(args, unknown, config):
 	def fieldPadding(maxLen, actualLen):
 		return ''.join([' ' for x in range(maxLen - actualLen + 4)])
 
+	PipelineSchedulerUtils.writeStdout(jobs)
 	maxJobIdLen = max([len(str(x.job_id)) for x in jobs].append(len("JOBID")))
 	maxPipelineLen = max([len(x.pipeline_name) for x in jobs].append(len("PIPELINE")))
 	maxOperationIdLen = max([len(x.operation_id.split('/')[1]) for x in jobs].append(len("OPERATION ID")))
