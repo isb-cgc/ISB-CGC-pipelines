@@ -11,7 +11,7 @@ from time import time, sleep
 from apiclient.discovery import build
 from googleapiclient.errors import HttpError
 from oauth2client.client import GoogleCredentials
-from lib.pipelines.utils import PipelinesConfig, PipelinesConfigUpdateHandler, PipelineSchedulerUtils, PipelineDbUtils
+from pipelines.utils import PipelinesConfig, PipelinesConfigUpdateHandler, PipelineSchedulerUtils, PipelineDbUtils
 
 
 class MonitoringHandler(pyinotify.ProcessEvent):

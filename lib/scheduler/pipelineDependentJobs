@@ -4,7 +4,7 @@ import re
 import shutil
 import argparse
 import pyinotify
-from lib.pipelines.utils import PipelinesConfig, PipelinesConfigUpdateHandler, PipelineSchedulerUtils, PipelineDbUtils
+from pipelines.utils import PipelinesConfig, PipelinesConfigUpdateHandler, PipelineSchedulerUtils, PipelineDbUtils
 
 # NOTE: this process should be started up as part of the scheduling system (managed by Supervisor)
 
