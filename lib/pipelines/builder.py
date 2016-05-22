@@ -124,7 +124,4 @@ class PipelineBuilder(object):
 			with open(os.path.join(self._config.pipelines_home, dest, str(jobIdMap[p["name"]])), 'w') as f:
 				f.write("{data}".format(data=json.dumps(p["request"], indent=4)))
 
-			with open(os.path.join(os.environ["HOME"], "temp.json"), 'w') as f:
-				f.write("{data}".format(data=json.dumps(p["request"], indent=4)))
-
 		self._pipelineDbUtils.closeConnection()	
