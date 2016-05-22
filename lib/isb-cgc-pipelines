@@ -16,7 +16,7 @@ PIPELINES_CONFIG_PATH = os.path.join(os.environ["HOME"], ".isb-cgc-pipelines", "
 def generatePipelineSchema(args, unknown, config, pipeline, toFile=False):
 
 	if pipeline in SCHEMA_GENERATORS:
-		module = __import__("schema_generation.{g}".format(g=pipeline))
+		module = __import__("schema_generators.{g}".format(g=pipeline))
 		schema = getattr(getattr(module, pipeline), "generate")(unknown, config)
 
 	else:
@@ -32,9 +32,9 @@ def generatePipelineSchema(args, unknown, config, pipeline, toFile=False):
 
 def importSchemaGenerator(args, config):
 	if args.alias:
-		shutil.copy(args.schemaGeneratorFilePath, os.path.join(os.path.dirname(__file__), "schema_generation", args.alias))
+		shutil.copy(args.schemaGeneratorFilePath, os.path.join(MODULE_PATH, "schema_generators", args.alias))
 	else:
-		shutil.copy(args.schemaGeneratorFilePath, os.path.join(os.path.dirname(__file__), "schema_generation"))
+		shutil.copy(args.schemaGeneratorFilePath, os.path.join(MODULE_PATH, "schema_generators"))
 
 
 def buildAndRunPipeline(args, unknown, config):
