@@ -1,8 +1,8 @@
 import os
 import uuid
 import argparse
-from ..pipelines.utils import DataUtils
-from ..pipelines.schema import PipelineSchema
+from lib.pipelines.utils import DataUtils
+from lib.pipelines.schema import PipelineSchema
 
 
 def generate(args, config):

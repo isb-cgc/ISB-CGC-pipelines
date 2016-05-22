@@ -1,8 +1,8 @@
 import os
 import argparse
-from ..pipelines.builder import PipelineBuilder
-from ..pipelines.schema import PipelineSchema
-from ..pipelines.utils import PipelinesConfig
+from lib.pipelines.builder import PipelineBuilder
+from lib.pipelines.schema import PipelineSchema
+from lib.pipelines.utils import PipelinesConfig
 
 # Parse Arguments
 parser = argparse.ArgumentParser()
@@ -33,7 +33,7 @@ setMetaFiles = []
 
 ## CGHUB STEP ##
 
-from ..schema_generators.cghub import generate
+from lib.schema_generators.cghub import generate
 
 cghubArgs = ["--analysisId", args.analysisId, "--cghubKey", args.cghubKey, "--diskSize", args.diskSize, "--logsPath", args.cghubLogs, "--outputPath", args.cghubOutput]
 
@@ -76,7 +76,7 @@ for f in files:
 
 if foundBam:
 	# BIOBLOOMCATEGORIZER STEP
-	from ..schema_generators.biobloomcategorizer import generate
+	from lib.schema_generators.biobloomcategorizer import generate
 
 	bbcArgs = ["--bamFile", os.path.join(args.cghubOutput, objectPath, bamFileName), "--filters", args.bbtFilters, "--tag", args.analysisId, "--diskSize", args.diskSize, "--outputPath", os.path.join(args.bbtOutput, objectPath), "--logsPath", args.bbtLogs]
 
@@ -93,7 +93,7 @@ if foundBam:
 	setMetaParents.append(bbcSchema)
 
 	if not foundBai:
-		from ..schema_generators.samtoolsindex import generate
+		from lib.schema_generators.samtoolsindex import generate
 
 		samtoolsIndexArgs = ["--bamFile", os.path.join(args.cghubOutput, objectPath, bamFileName), "--tag", args.analysisId, "--diskSize", args.diskSize, "--outputPath", os.path.join(args.cghubOutput, objectPath), "--logsPath", args.samtoolsIndexLogs]
 
@@ -114,7 +114,7 @@ if foundBam:
 
 elif foundFastq:
 	# FASTQC STEP
-	from ..schema_generators.fastqc import generate
+	from lib.schema_generators.fastqc import generate
 
 	fastqcArgs = ["--fastqFile", fastqFileName, "--tag", args.analysisId, "--outputPath", os.path.join(args.fastqcOutput, objectPath), "--diskSize", args.diskSize, "--logsPath", args.fastqcLogs]
 
