@@ -9,8 +9,8 @@ from ConfigParser import SafeConfigParser
 from pipelines.builder import PipelineBuilder
 from pipelines.utils import PipelinesConfig, PipelineDbUtils
 
-MODULE_PATH = "/usr/local/isb_cgc_pipelines"  # TODO: move path to configuration file
-SCHEMA_GENERATORS = ['.'.join(x.split('.')[0:-1]) for x in os.listdir(os.path.join(MODULE_PATH, "schema_generation")) if not re.match('^_.*$', x) and not re.match('^.*~$', x)]
+MODULE_PATH = "/usr/local/ISB-CGC-pipelines/lib"  # TODO: move path to configuration file
+SCHEMA_GENERATORS = ['.'.join(x.split('.')[0:-1]) for x in os.listdir(os.path.join(MODULE_PATH, "schema_generators")) if not re.match('^_.*$', x) and not re.match('^.*~$', x)]
 PIPELINES_CONFIG_PATH = os.path.join(os.environ["HOME"], ".isb-cgc-pipelines", "config")
 
 def generatePipelineSchema(args, unknown, config, pipeline, toFile=False):
