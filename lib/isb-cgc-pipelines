@@ -110,6 +110,7 @@ def startScheduler(args, unknown, config):
 		
 		c.set("program:pipelineRunningJobs", "process_name", "pipelineRunningJobs")
 		c.set("program:pipelineRunningJobs", "command", "pipelineRunningJobs --config {config}".format(config=PIPELINES_CONFIG_PATH))
+		c.set("program:pipelineRunningJobs", "environment", "PYTHONPATH={modulePath}".format(modulePath=MODULE_PATH))
 		c.set("program:pipelineRunningJobs", "numprocs", "1")
 		c.set("program:pipelineRunningJobs", "buffer_size", config.max_running_jobs)
 		c.set("program:pipelineRunningJobs", "autostart", "true")
@@ -118,6 +119,7 @@ def startScheduler(args, unknown, config):
 
 		c.set("program:pipelineWaitingJobs", "process_name", "pipelineWaitingJobs")
 		c.set("program:pipelineWaitingJobs", "command", "pipelineWaitingJobs --config {config}".format(config=PIPELINES_CONFIG_PATH))
+		c.set("program:pipelineWaitingJobs", "environment", "PYTHONPATH={modulePath}".format(modulePath=MODULE_PATH))
 		c.set("program:pipelineWaitingJobs", "numprocs", "1")
 		c.set("program:pipelineWaitingJobs", "buffer_size", config.max_running_jobs)
 		c.set("program:pipelineWaitingJobs", "autostart", "true")
@@ -126,6 +128,7 @@ def startScheduler(args, unknown, config):
 
 		c.set("program:pipelinePreemptedJobs", "process_name", "pipelinePreemptedJobs")
 		c.set("program:pipelinePreemptedJobs", "command", "pipelinePreemptedJobs --config {config}".format(config=PIPELINES_CONFIG_PATH))
+		c.set("program:pipelinePreemptedJobs", "environment", "PYTHONPATH={modulePath}".format(modulePath=MODULE_PATH))
 		c.set("program:pipelinePreemptedJobs", "numprocs", "1")
 		c.set("program:pipelinePreemptedJobs", "buffer_size", config.max_running_jobs)
 		c.set("program:pipelinePreemptedJobs", "autostart", "true")
@@ -134,6 +137,7 @@ def startScheduler(args, unknown, config):
 
 		c.set("program:pipelineDependentJobs", "process_name", "pipelineDependentJobs")
 		c.set("program:pipelineDependentJobs", "command", "pipelineDependentJobs --config {config}".format(config=PIPELINES_CONFIG_PATH))
+		c.set("program:pipelineDependentJobs", "environment", "PYTHONPATH={modulePath}".format(modulePath=MODULE_PATH))
 		c.set("program:pipelineDependentJobs", "numprocs", "1")
 		c.set("program:pipelineDependentJobs", "buffer_size", config.max_running_jobs)
 		c.set("program:pipelineDependentJobs", "autostart", "true")
@@ -142,6 +146,7 @@ def startScheduler(args, unknown, config):
 
 		c.set("program:pipelineMonitor", "process_name", "pipelineMonitor")
 		c.set("program:pipelineMonitor", "command", "pipelineMonitor --config {config}".format(config=PIPELINES_CONFIG_PATH))
+		c.set("program:pipelineMonitorJobs", "environment", "PYTHONPATH={modulePath}".format(modulePath=MODULE_PATH))
 		c.set("program:pipelineMonitor", "numprocs", "1")
 		c.set("program:pipelineMonitor", "buffer_size", config.max_running_jobs)
 		c.set("program:pipelineMonitor", "autostart", "true")
