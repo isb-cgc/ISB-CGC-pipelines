@@ -121,7 +121,7 @@ class PipelineBuilder(object):
 
 			self._pipelineDbUtils.updateJob(jobIdMap[p["name"]], setValues={"current_status": dest})
 
-			PipelineSchedulerUtils.writeStdout(json.dumps(p["request"]))
+			PipelineSchedulerUtils.writeStdout(str(jobIdMap[p["name"]]))
 
 			with open(os.path.join(self._config.pipelines_home, dest, str(jobIdMap[p["name"]])), 'w') as f:
 				f.write("{data}".format(data=json.dumps(p["request"], indent=4)))
