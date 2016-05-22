@@ -6,6 +6,7 @@ def generate(args, config):
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--cmd", required=True)
 	parser.add_argument("--image", required=True)
+	parser.add_argument("--tag", required=True)
 	parser.add_argument("--logsPath", required=True)
 	parser.add_argument("--preemptible", required=False, action="store_true", default=False)
 

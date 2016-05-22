@@ -30,7 +30,8 @@ class RunningJobsHandler(pyinotify.ProcessEvent):
 		jobInfo = self._pipelineDbUtils.getJobInfo(select=["pipeline_name", "tag"], where={"job_id": event.name})
 		PipelineSchedulerUtils.writeStdout("Starting job {pipeline}-{tag} ...".format(pipeline=jobInfo[0].pipeline_name, tag=jobInfo[0].tag))
 
-		req = json.load(open(event.pathname))
+		with open(event.pathname) as f:
+			req = json.load(f)
 
 		try:
 			run = self._pipelineService.pipelines().run(body=req).execute()
