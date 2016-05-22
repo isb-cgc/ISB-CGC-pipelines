@@ -129,7 +129,7 @@ class PipelineBuilder(object):
 			with open(os.path.join("/tmp", tmp, str(jobIdMap[p["name"]])), 'w') as f:
 				f.write("{data}".format(data=json.dumps(p["request"], indent=4)))
 
-			shutil.copy(os.path.join("/tmp", tmp, str(jobIdMap[p["name"]])), os.path.join(self._config.pipelines_home, dest, str(jobIdMap[p["name"]]))) 
+			shutil.copy(os.path.join("/tmp", tmp, str(jobIdMap[p["name"]])), os.path.join(self._config.pipelines_home, dest))
 			shutil.rmtree(os.path.join("/tmp", tmp))
 
 		self._pipelineDbUtils.closeConnection()	
