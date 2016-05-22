@@ -15,7 +15,7 @@ def generate(args, config):
 
 	args = parser.parse_args(args=args)
 
-	samtoolsIndexSchema = PipelineSchema('samtools-index', args.tag, config)
+	samtoolsIndexSchema = PipelineSchema('samtoolsindex', args.tag, config)
 
 	samtoolsIndexDiskName = "samtools-index-{uuid}".format(uuid=str(uuid.uuid4()).split('-')[0])
 	samtoolsIndexDiskType = "PERSISTENT_SSD"

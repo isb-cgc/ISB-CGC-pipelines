@@ -7,7 +7,7 @@ import argparse
 import subprocess
 from ConfigParser import SafeConfigParser
 from pipelines.builder import PipelineBuilder
-from pipelines.utils import PipelinesConfig, PipelineDbUtils, PipelineSchedulerUtils
+from pipelines.utils import PipelinesConfig, PipelineDbUtils
 
 MODULE_PATH = "/usr/local/ISB-CGC-pipelines/lib"  # TODO: move path to configuration file
 SCHEMA_GENERATORS = ['.'.join(x.split('.')[0:-1]) for x in os.listdir(os.path.join(MODULE_PATH, "schema_generators")) if not re.match('^_.*$', x) and not re.match('^.*~$', x)]
@@ -272,17 +272,20 @@ def getJobsList(args, unknown, config):
 	def fieldPadding(maxLen, actualLen):
 		return ''.join([' ' for x in range(maxLen - actualLen + 4)])
 
-	print jobs
-	maxJobIdLen = max([len(str(x.job_id)) for x in jobs].append(len("JOBID")))
-	maxPipelineLen = max([len(x.pipeline_name) for x in jobs].append(len("PIPELINE")))
-	maxOperationIdLen = max([len(x.operation_id.split('/')[1]) for x in jobs].append(len("OPERATION ID")))
-	maxStatusLen = max([len(x.current_status) for x in jobs].append(len("STATUS")))
-	maxTagLen = max([len(x.tag) for x in jobs].append(len("TAG")))
-	maxCreateTimeLen = max([len(x.create_time) for x in jobs].append(len("CREATE TIME")))
+	if len(jobs) > 0:
+		maxJobIdLen = max([len(str(x.job_id)) for x in jobs].append(len("JOBID")))
+		maxPipelineLen = max([len(x.pipeline_name) for x in jobs].append(len("PIPELINE")))
+		maxOperationIdLen = max([len(x.operation_id.split('/')[1]) for x in jobs].append(len("OPERATION ID")))
+		maxStatusLen = max([len(x.current_status) for x in jobs].append(len("STATUS")))
+		maxTagLen = max([len(x.tag) for x in jobs].append(len("TAG")))
+		maxCreateTimeLen = max([len(x.create_time) for x in jobs].append(len("CREATE TIME")))
 
-	print header % (fieldPadding(maxJobIdLen, len("JOBID")), fieldPadding(maxPipelineLen, len("PIPELINE")), fieldPadding(maxOperationIdLen, len("OPERATION ID")), fieldPadding(maxTagLen, len("TAG")), fieldPadding(maxStatusLen, len("STATUS")), fieldPadding(maxCreateTimeLen, len("CREATE TIME")))
-	for j in jobs:
-		print jobStatusString.format(jobId=j.job_id, pipeline=j.pipeline_name, tag=j.tag, status=j.current_status, createTime=j.create_time, preemptions=j.preemptions) % (fieldPadding(maxJobIdLen, len(str(j.job_id))), fieldPadding(maxPipelineLen, len(j.pipeline_name)), fieldPadding(maxTagLen, len(j.tag)), fieldPadding(maxStatusLen, len(j.current_status)), fieldPadding(maxCreateTimeLen, len(j.create_time)))
+		print header % (fieldPadding(maxJobIdLen, len("JOBID")), fieldPadding(maxPipelineLen, len("PIPELINE")), fieldPadding(maxOperationIdLen, len("OPERATION ID")), fieldPadding(maxTagLen, len("TAG")), fieldPadding(maxStatusLen, len("STATUS")), fieldPadding(maxCreateTimeLen, len("CREATE TIME")))
+		for j in jobs:
+			print jobStatusString.format(jobId=j.job_id, pipeline=j.pipeline_name, tag=j.tag, status=j.current_status, createTime=j.create_time, preemptions=j.preemptions) % (fieldPadding(maxJobIdLen, len(str(j.job_id))), fieldPadding(maxPipelineLen, len(j.pipeline_name)), fieldPadding(maxTagLen, len(j.tag)), fieldPadding(maxStatusLen, len(j.current_status)), fieldPadding(maxCreateTimeLen, len(j.create_time)))
+
+	else:
+		print "No jobs found"
 
 
 def configureTool(args, unknown):
