@@ -94,7 +94,7 @@ class PipelineSchema(object):
 
 	def setBootDiskSize(self, sizeGb):
 		self._schema["request"]["pipelineArgs"]["resources"]["bootDiskSizeGb"] = sizeGb
-		self._schema["request"]["ephemeralPipeline"]["resources"]["bootDiskSizeGb"]
+		self._schema["request"]["ephemeralPipeline"]["resources"]["bootDiskSizeGb"] = sizeGb
 
 	def setPreemptible(self, preemptible):
 		self._schema["request"]["pipelineArgs"]["resources"]["preemptible"] = preemptible
