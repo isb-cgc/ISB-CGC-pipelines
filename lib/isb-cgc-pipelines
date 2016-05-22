@@ -273,12 +273,29 @@ def getJobsList(args, unknown, config):
 		return ''.join([' ' for x in range(maxLen - actualLen + 4)])
 
 	if len(jobs) > 0:
-		maxJobIdLen = max([len(str(x.job_id)) for x in jobs].append(len("JOBID")))
-		maxPipelineLen = max([len(x.pipeline_name) for x in jobs].append(len("PIPELINE")))
-		maxOperationIdLen = max([len(x.operation_id.split('/')[1]) for x in jobs].append(len("OPERATION ID")))
-		maxStatusLen = max([len(x.current_status) for x in jobs].append(len("STATUS")))
-		maxTagLen = max([len(x.tag) for x in jobs].append(len("TAG")))
-		maxCreateTimeLen = max([len(x.create_time) for x in jobs].append(len("CREATE TIME")))
+		jobIdLengths = [len(str(x.job_id)) for x in jobs]
+		jobIdLengths.append(len("JOBID"))
+		maxJobIdLen = max(jobIdLengths)
+
+		pipelineLengths = [len(x.pipeline_name) for x in jobs]
+		pipelineLengths.append(len("PIPELINE"))
+		maxPipelineLen = max(pipelineLengths)
+
+		operationIdLengths = [len(x.operation_id.split('/')[1]) for x in jobs]
+		operationIdLengths.append(len("OPERATION ID"))
+		maxOperationIdLen = max(operationIdLengths)
+
+		statusLengths = [len(x.current_status) for x in jobs]
+		statusLengths.append(len("STATUS"))
+		maxStatusLen = max(statusLengths)
+
+		tagLengths = [len(x.tag) for x in jobs]
+		tagLengths.append(len("TAG"))
+		maxTagLen = max(tagLengths)
+
+		createTimeLengths = [len(x.create_time) for x in jobs]
+		createTimeLengths.append(len("CREATE TIME"))
+		maxCreateTimeLen = max(createTimeLengths)
 
 		print header % (fieldPadding(maxJobIdLen, len("JOBID")), fieldPadding(maxPipelineLen, len("PIPELINE")), fieldPadding(maxOperationIdLen, len("OPERATION ID")), fieldPadding(maxTagLen, len("TAG")), fieldPadding(maxStatusLen, len("STATUS")), fieldPadding(maxCreateTimeLen, len("CREATE TIME")))
 		for j in jobs:
