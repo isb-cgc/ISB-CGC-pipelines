@@ -28,7 +28,7 @@ def watch(args):
 	jobStatusNotifier = pyinotify.Notifier(jobStatusManager)
 
 	jobStatusManager.add_watch(config.path, pyinotify.IN_CLOSE_WRITE, proc_fun=PipelinesConfigUpdateHandler(config=config))
-	jobStatusManager.add_watch(os.path.join(config.pipelines_home, "WAITING"), pyinotify.IN_CREATE, proc_fun=WaitingJobsHandler(config=config))
+	jobStatusManager.add_watch(os.path.join(config.pipelines_home, "WAITING"), pyinotify.IN_CLOSE_WRITE, proc_fun=WaitingJobsHandler(config=config))
 
 	jobStatusNotifier.loop()
 
