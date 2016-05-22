@@ -399,7 +399,7 @@ def configureTool(args, unknown):
 			config.set("pipelines", "polling_interval", pollingInterval)
 
 			maxRunningJobs = raw_input("Enter the maximum number of running jobs for any given time (leave blank to use default 2000): ")
-			if len(maxRunningJobs) > 0:
+			if len(maxRunningJobs) == 0:
 				maxRunningJobs = "2000"
 
 			config.set("pipelines", "max_running_jobs", maxRunningJobs)
