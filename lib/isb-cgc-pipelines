@@ -146,7 +146,7 @@ def startScheduler(args, unknown, config):
 
 		c.set("program:pipelineMonitor", "process_name", "pipelineMonitor")
 		c.set("program:pipelineMonitor", "command", "pipelineMonitor --config {config}".format(config=PIPELINES_CONFIG_PATH))
-		c.set("program:pipelineMonitorJobs", "environment", "PYTHONPATH={modulePath}".format(modulePath=MODULE_PATH))
+		c.set("program:pipelineMonitor", "environment", "PYTHONPATH={modulePath}".format(modulePath=MODULE_PATH))
 		c.set("program:pipelineMonitor", "numprocs", "1")
 		c.set("program:pipelineMonitor", "buffer_size", config.max_running_jobs)
 		c.set("program:pipelineMonitor", "autostart", "true")
