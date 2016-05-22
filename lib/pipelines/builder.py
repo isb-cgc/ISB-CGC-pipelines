@@ -1,8 +1,7 @@
 import os
-import uuid
 import json
 from jsonspec.validators import load  # jsonspec is licensed under BSD
-from utils import PipelineDbUtils
+from utils import PipelineDbUtils, PipelineSchedulerUtils
 
 
 class PipelineBuilder(object):
@@ -121,6 +120,8 @@ class PipelineBuilder(object):
 				dest = "WAITING"
 
 			self._pipelineDbUtils.updateJob(jobIdMap[p["name"]], setValues={"current_status": dest})
+
+			PipelineSchedulerUtils.writeStdout(json.dumps(p["request"]))
 
 			with open(os.path.join(self._config.pipelines_home, dest, str(jobIdMap[p["name"]])), 'w') as f:
 				f.write("{data}".format(data=json.dumps(p["request"], indent=4)))
