@@ -272,7 +272,7 @@ def getJobsList(args, unknown, config):
 	def fieldPadding(maxLen, actualLen):
 		return ''.join([' ' for x in range(maxLen - actualLen + 4)])
 
-	PipelineSchedulerUtils.writeStdout(jobs)
+	print jobs
 	maxJobIdLen = max([len(str(x.job_id)) for x in jobs].append(len("JOBID")))
 	maxPipelineLen = max([len(x.pipeline_name) for x in jobs].append(len("PIPELINE")))
 	maxOperationIdLen = max([len(x.operation_id.split('/')[1]) for x in jobs].append(len("OPERATION ID")))
