@@ -250,7 +250,7 @@ def getJobsList(args, unknown, config):
 
 	args = parser.parse_args(args=unknown, namespace=args)
 
-	select = ["job_id", "pipeline_name", "tag", "current_status", "create_time", "preemptions"]
+	select = ["job_id", "operation_id", "pipeline_name", "tag", "current_status", "create_time", "preemptions"]
 	where = {}
 
 	if args.pipeline:
