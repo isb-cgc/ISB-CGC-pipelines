@@ -299,7 +299,7 @@ def getJobsList(args, unknown, config):
 
 		print header % (fieldPadding(maxJobIdLen, len("JOBID")), fieldPadding(maxPipelineLen, len("PIPELINE")), fieldPadding(maxOperationIdLen, len("OPERATION ID")), fieldPadding(maxTagLen, len("TAG")), fieldPadding(maxStatusLen, len("STATUS")), fieldPadding(maxCreateTimeLen, len("CREATE TIME")))
 		for j in jobs:
-			print jobStatusString.format(jobId=j.job_id, pipeline=j.pipeline_name, operationId=j.operation_id.split('/')[1], tag=j.tag, status=j.current_status, createTime=j.create_time, preemptions=j.preemptions) % (fieldPadding(maxJobIdLen, len(str(j.job_id))), fieldPadding(maxPipelineLen, len(j.pipeline_name)), fieldPadding(maxOperationIdLen, len(j.operation_id)), fieldPadding(maxTagLen, len(j.tag)), fieldPadding(maxStatusLen, len(j.current_status)), fieldPadding(maxCreateTimeLen, len(j.create_time)))
+			print jobStatusString.format(jobId=j.job_id, pipeline=j.pipeline_name, operationId=j.operation_id.split('/')[1], tag=j.tag, status=j.current_status, createTime=j.create_time, preemptions=j.preemptions) % (fieldPadding(maxJobIdLen, len(str(j.job_id))), fieldPadding(maxPipelineLen, len(j.pipeline_name)), fieldPadding(maxOperationIdLen, len(j.operation_id.split('/')[1])), fieldPadding(maxTagLen, len(j.tag)), fieldPadding(maxStatusLen, len(j.current_status)), fieldPadding(maxCreateTimeLen, len(j.create_time)))
 
 	else:
 		print "No jobs found"
