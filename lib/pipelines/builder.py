@@ -1,7 +1,6 @@
 import os
 import uuid
 import json
-import shutil
 from jsonspec.validators import load  # jsonspec is licensed under BSD
 from utils import PipelineDbUtils
 
@@ -123,13 +122,7 @@ class PipelineBuilder(object):
 
 			self._pipelineDbUtils.updateJob(jobIdMap[p["name"]], setValues={"current_status": dest})
 
-			tmp = str(uuid.uuid4())
-			os.makedirs(os.path.join("/tmp", tmp))
-
-			with open(os.path.join("/tmp", tmp, str(jobIdMap[p["name"]])), 'w') as f:
+			with open(os.path.join(self._config.pipelines_home, dest, str(jobIdMap[p["name"]])), 'w') as f:
 				f.write("{data}".format(data=json.dumps(p["request"], indent=4)))
-
-			shutil.copy(os.path.join("/tmp", tmp, str(jobIdMap[p["name"]])), os.path.join(self._config.pipelines_home, dest))
-			shutil.rmtree(os.path.join("/tmp", tmp))
 
 		self._pipelineDbUtils.closeConnection()	
