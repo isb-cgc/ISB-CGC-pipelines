@@ -92,6 +92,10 @@ class PipelineSchema(object):
 		self._schema["request"]["pipelineArgs"]["resources"]["minimumCpuCores"] = cores
 		self._schema["request"]["ephemeralPipeline"]["resources"]["minimumCpuCores"] = cores
 
+	def setBootDiskSize(self, sizeGb):
+		self._schema["request"]["pipelineArgs"]["resources"]["bootDiskSizeGb"] = sizeGb
+		self._schema["request"]["ephemeralPipeline"]["resources"]["bootDiskSizeGb"]
+
 	def setPreemptible(self, preemptible):
 		self._schema["request"]["pipelineArgs"]["resources"]["preemptible"] = preemptible
 		self._schema["request"]["ephemeralPipeline"]["resources"]["preemptible"] = preemptible

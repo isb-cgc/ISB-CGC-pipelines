@@ -5,6 +5,7 @@ import shutil
 import httplib2
 import argparse
 import pyinotify
+from time import sleep
 from apiclient.discovery import build
 from googleapiclient.errors import HttpError
 from oauth2client.client import GoogleCredentials
@@ -27,6 +28,7 @@ class RunningJobsHandler(pyinotify.ProcessEvent):
 
 	def process_IN_CREATE(self, event):
 		# event.pathname -> <pipelines_home>/RUNNING/<job_id>
+		sleep(1)
 		jobInfo = self._pipelineDbUtils.getJobInfo(select=["pipeline_name", "tag"], where={"job_id": event.name})
 		PipelineSchedulerUtils.writeStdout("Starting job {pipeline}-{tag} ...".format(pipeline=jobInfo[0].pipeline_name, tag=jobInfo[0].tag))
 

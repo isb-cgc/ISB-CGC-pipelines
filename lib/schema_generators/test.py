@@ -15,6 +15,8 @@ def generate(args, config):
 	testSchema = PipelineSchema('test', args.tag, config)
 	testSchema.setLogOutput(args.logsPath)
 
+	testSchema.setBootDiskSize(20)
+	testSchema.addInput("dummyInput", "boot", "/dummy.txt", "gs://isb-cgc-data-02-misc/dummy.txt")
 	testSchema.setCmd(args.cmd)
 	testSchema.setImage(args.image)
 
