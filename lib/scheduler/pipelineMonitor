@@ -111,7 +111,7 @@ class MonitoringHandler(pyinotify.ProcessEvent):
 					if re.search("13:.*", status["error"]["message"]) or re.search("14:.*", status["error"]["message"]):
 						PipelineSchedulerUtils.writeStdout("PIPELINE PREEMPTED ({job})".format(job="{pipeline}-{tag}".format(pipeline=jobInfo[0].pipeline_name, tag=jobInfo[0].tag)))
 						
-						self._pipelineDbUtils.updateJob(jobInfo[0].job_id, setValues={"current_status": "PREEMTPED", "preemptions": "preemptions + 1"})
+						self._pipelineDbUtils.updateJob(jobInfo[0].job_id, setValues={"current_status": "PREEMTPED", "preemptions": "(preemptions + 1)"})
 
 						shutil.copy(os.path.join(self._config.pipelines_home, "RUNNING", str(jobInfo[0].job_id)), os.path.join(self._config.pipelines_home, "PREEMPTED", str(jobInfo[0].job_id)))
 						os.remove(os.path.join(self._config.pipelines_home, "RUNNING", str(jobInfo[0].job_id)))

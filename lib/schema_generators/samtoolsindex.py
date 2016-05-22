@@ -30,7 +30,7 @@ def generate(args, config):
 	samtoolsIndexSchema.setLogOutput(args.logsPath)
 
 	samtoolsIndexSchema.setCmd("cd {diskMountPath} && samtools index {bamFileName}".format(diskMountPath=samtoolsIndexDiskMountPath, bamFileName=bamFileName))
-	samtoolsIndexSchema.setImage("biodckr/samtools")
+	samtoolsIndexSchema.setImage("b.gcr.io/isb-cgc-public-docker-images/samtools:1.3.1")
 
 	samtoolsIndexSchema.setMem(2)
 	samtoolsIndexSchema.setCpu(1)
