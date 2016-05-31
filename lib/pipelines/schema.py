@@ -48,7 +48,7 @@ class PipelineSchema(object):
 		mountPath = "/{pipeline}".format(pipeline=name)
 		if diskType is None:
 			diskType = "PERSISTENT_SSD"
-			
+
 		self.addDisk(name, diskType, diskSize, mountPath)
 
 		# add inputs
@@ -86,7 +86,7 @@ class PipelineSchema(object):
 			script = os.path.basename(scriptUrl)
 			self.addInput("pipelineScript", name, "{mnt}/{script}".format(mnt=mountPath, script=script), scriptUrl)
 			command = (
-				'cd {mnt} && '
+				'cd {mnt} && ls && '
 				'chmod u+x {script} && '
 				'{env}./{script}'
 			).format(mnt=mountPath, script=script, env=envString)
