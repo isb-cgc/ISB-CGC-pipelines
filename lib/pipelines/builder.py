@@ -1,7 +1,7 @@
 import os
 import json
 from jsonspec.validators import load  # jsonspec is licensed under BSD
-from utils import PipelineDbUtils, PipelineSchedulerUtils
+from utils import PipelineDbUtils
 
 
 class PipelineBuilder(object):

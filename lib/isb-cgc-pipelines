@@ -1,67 +1,15 @@
 #!/usr/bin/env python
 import os
-import re
-import json
 import shutil
 import argparse
 import subprocess
 from ConfigParser import SafeConfigParser
 from pipelines.builder import PipelineBuilder
+from pipelines.schema import PipelineSchema
 from pipelines.utils import PipelinesConfig, PipelineDbUtils
 
 MODULE_PATH = "/usr/local/ISB-CGC-pipelines/lib"  # TODO: move path to configuration file
-SCHEMA_GENERATORS = ['.'.join(x.split('.')[0:-1]) for x in os.listdir(os.path.join(MODULE_PATH, "schema_generators")) if not re.match('^_.*$', x) and not re.match('^.*~$', x)]
 PIPELINES_CONFIG_PATH = os.path.join(os.environ["HOME"], ".isb-cgc-pipelines", "config")
-
-def generatePipelineSchema(args, unknown, config, pipeline, toFile=False):
-
-	if pipeline in SCHEMA_GENERATORS:
-		module = __import__("schema_generators.{g}".format(g=pipeline))
-		schema = getattr(getattr(module, pipeline), "generate")(unknown, config)
-
-	else:
-		print "ERROR: schema generator {g} not found -- did you forget to run `isb-cgc-pipelines import`?".format(g=pipeline)
-		exit(-1)
-
-	if toFile:
-		with open(args.toFile, 'w') as f:
-			f.write("{data}".format(data=json.dumps(schema, indent=4)))
-
-	return schema
-
-
-def importSchemaGenerator(args, config):
-	if args.alias:
-		shutil.copy(args.schemaGeneratorFilePath, os.path.join(MODULE_PATH, "schema_generators", args.alias))
-	else:
-		shutil.copy(args.schemaGeneratorFilePath, os.path.join(MODULE_PATH, "schema_generators"))
-
-
-def buildAndRunPipeline(args, unknown, config):
-	try:
-		os.makedirs(config.pipelines_home)
-	except OSError as e:
-		pass 
-
-	if args.pipeline == "from-schema":
-		parser = argparse.ArgumentParser()
-		parser.add_argument("--path")
-		parser.parse_args(args=unknown, namespace=args)
-
-		try:
-			with open(args.path) as pipelineFh:
-				pipelineSpec = json.load(pipelineFh)
-		except IOError as e:
-			# do some error handling ... will also need to handle JSON related exceptions as well.
-			print "ERROR: there was a problem with the pipeline specification file : {reason}".format(reason=e)
-			exit(-1) 
-
-	else:
-		pipelineSpec = generatePipelineSchema(args, unknown, config, args.pipeline)
-
-	pipelineBuilder = PipelineBuilder(config)
-	pipelineBuilder.addStep(pipelineSpec)
-	pipelineBuilder.run()
 
 
 def startScheduler(args, unknown, config):
@@ -243,7 +191,7 @@ def getJobsList(args, unknown, config):
 	pipelineDbUtils = PipelineDbUtils(config)
 
 	parser = argparse.ArgumentParser()
-	parser.add_argument("--pipeline", choices=SCHEMA_GENERATORS)
+	parser.add_argument("--pipeline")
 	parser.add_argument("--status", choices=["running", "waiting", "succeeded", "failed", "error", "preempted"])
 	parser.add_argument("--createTimeAfter")
 	parser.add_argument("--limit", default=50)
@@ -426,20 +374,26 @@ def configureTool(args, unknown):
 def main(args, unknown):
 	if args.subcommand == "submit":
 		config = PipelinesConfig(PIPELINES_CONFIG_PATH)
-		buildAndRunPipeline(args, unknown, config)
 
-	elif args.subcommand == "generate-schema":
-		config = PipelinesConfig(PIPELINES_CONFIG_PATH)
-		if args.toFile:
-			toFile=True
-		else:
-			toFile=False
+		try:
+			os.makedirs(config.pipelines_home)
+		except OSError as e:
+			pass
 
-		generatePipelineSchema(args, unknown, config, args.schemaGenerator, toFile=toFile)
+		if args.scriptUrl:
+			pipelineSpec = PipelineSchema(args.pipelineName, config, args.logsPath, args.imageName, scriptUrl=args.scriptUrl, cores=args.cores,
+			                              mem=args.mem, diskSize=args.diskSize, diskType=args.diskType, env=args.env,
+			                              inputs=args.inputs, outputs=args.outputs, tag=args.tag,
+			                              preemptible=args.preemptible)
+		elif args.cmd:
+			pipelineSpec = PipelineSchema(args.pipelineName, config, args.logsPath, args.imageName, cmd=args.cmd, cores=args.cores,
+			                              mem=args.mem, diskSize=args.diskSize, diskType=args.diskType, env=args.env,
+			                              inputs=args.inputs, outputs=args.outputs, tag=args.tag,
+			                              preemptible=args.preemptible)
 
-	elif args.subcommand == "import-schema-generator":
-		config = PipelinesConfig(PIPELINES_CONFIG_PATH)
-		importSchemaGenerator(args, config)
+		pipelineBuilder = PipelineBuilder(config)
+		pipelineBuilder.addStep(pipelineSpec)
+		pipelineBuilder.run()
 
 	elif args.subcommand == "stop":
 		config = PipelinesConfig(PIPELINES_CONFIG_PATH)
@@ -462,9 +416,6 @@ def main(args, unknown):
 
 		if args.entity == "jobs":
 			getJobsList(args, unknown, config)
-		elif args.entity == "schemas":
-			for s in SCHEMA_GENERATORS:
-				print s
 
 	elif args.subcommand == "scheduler":
 		config = PipelinesConfig(PIPELINES_CONFIG_PATH)
@@ -487,16 +438,22 @@ if __name__ == "__main__":
 	scheduler = subparsers.add_parser("scheduler")
 	scheduler.add_argument("schedulerOperation", choices=["start", "stop"])
 
-	generateSchema = subparsers.add_parser("generate-schema")
-	generateSchema.add_argument("schemaGenerator")
-	generateSchema.add_argument("--toFile")
-
-	importSchemaGen = subparsers.add_parser("import-schema-generator")
-	importSchemaGen.add_argument("schemaGeneratorFilePath")
-	importSchemaGen.add_argument("--alias")
-
 	submit = subparsers.add_parser("submit", conflict_handler="resolve")
-	submit.add_argument("pipeline", choices=SCHEMA_GENERATORS + ["from-schema"])
+	submit.add_argument("--pipelineName", required=True)
+	submit.add_argument("--logsPath", required=True)
+	submit.add_argument("--diskSize", required=True)
+	submit.add_argument("--diskType", required=False)
+	submitGrp = submit.add_mutually_exclusive_group(required=True)
+	submitGrp.add_argument("--scriptUrl")
+	submitGrp.add_argument("--cmd")
+	submit.add_argument("--imageName", required=True)
+	submit.add_argument("--cores", required=False)
+	submit.add_argument("--mem", required=False)
+	submit.add_argument("--inputs", required=False)
+	submit.add_argument("--outputs", required=False)
+	submit.add_argument("--env", required=False)
+	submit.add_argument("--tag", required=False)
+	submit.add_argument("--preemptible", action="store_true", default=False)
 
 	stop = subparsers.add_parser("stop")
 	stopGrp = stop.add_mutually_exclusive_group()
@@ -518,7 +475,6 @@ if __name__ == "__main__":
 
 	lst = subparsers.add_parser("list")
 	lst.add_argument("entity", choices=["jobs", "schemas"])
-
 	
 	config = subparsers.add_parser("config")
 	config.add_argument("configOperation", choices=["set"])
