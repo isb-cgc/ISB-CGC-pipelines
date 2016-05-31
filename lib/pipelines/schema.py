@@ -3,7 +3,7 @@ import uuid
 
 
 class PipelineSchema(object):
-	def __init__(self, name, config, logsPath, imageName, scriptUrl=None, cmd=None, cores=1, mem=1, diskSize=200, diskType="PERSISTENT_SSD", env=None, inputs=None, outputs=None, tag=None, children=None, metadata=None, preemptible=False):  # config must be an instance of pipelines.utils.PipelinesConfig
+	def __init__(self, name, config, logsPath, imageName, scriptUrl=None, cmd=None, cores=1, mem=1, diskSize=200, diskType=None, env=None, inputs=None, outputs=None, tag=None, children=None, metadata=None, preemptible=False):  # config must be an instance of pipelines.utils.PipelinesConfig
 		self.name = name
 
 		if tag is None:
@@ -46,6 +46,9 @@ class PipelineSchema(object):
 
 		# add a disk
 		mountPath = "/{pipeline}".format(pipeline=name)
+		if diskType is None:
+			diskType = "PERSISTENT_SSD"
+			
 		self.addDisk(name, diskType, diskSize, mountPath)
 
 		# add inputs
