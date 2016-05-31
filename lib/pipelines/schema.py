@@ -145,8 +145,7 @@ class PipelineSchema(object):
 			"type": diskType,
 			"sizeGb": sizeGb,
 			"autoDelete": autoDelete,
-			"readOnly": readOnly,
-			"mountPoint": mountPath
+			"readOnly": readOnly
 		})
 		self._schema["request"]["ephemeralPipeline"]["resources"]["disks"].append({
 			"name": name,
