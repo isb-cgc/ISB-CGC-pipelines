@@ -3,7 +3,7 @@ import uuid
 
 
 class PipelineSchema(object):
-	def __init__(self, name, config, logsPath, scriptUrl, imageName, cores=1, mem=1, diskSize=200, diskType="PERSISTENT_SSD", env=None, inputs=None, outputs=None, tag=None, children=None, metadata=None, preemptible=False):  # config must be an instance of pipelines.utils.PipelinesConfig
+	def __init__(self, name, config, logsPath, imageName, scriptUrl=None, cmd=None, cores=1, mem=1, diskSize=200, diskType="PERSISTENT_SSD", env=None, inputs=None, outputs=None, tag=None, children=None, metadata=None, preemptible=False):  # config must be an instance of pipelines.utils.PipelinesConfig
 		self.name = name
 
 		if tag is None:
@@ -78,14 +78,22 @@ class PipelineSchema(object):
 			envString = ""
 
 		# set docker
-		script = os.path.basename(scriptUrl)
 		self.setImage(imageName)
-		self.addInput("pipelineScript", name, "/{mnt}/{script}".format(mnt=mountPath, script=script))
-		self.setCmd((
-			'cd /{mnt} &&'
-			'chmod u+x {script} &&'
-			'{env}./{script}'
-		).format(mnt=mountPath, script=script, env=envString))
+		if scriptUrl is not None:
+			script = os.path.basename(scriptUrl)
+			self.addInput("pipelineScript", name, "/{mnt}/{script}".format(mnt=mountPath, script=script))
+			command = (
+				'cd /{mnt} && '
+				'chmod u+x {script} && '
+				'{env}./{script}'
+			).format(mnt=mountPath, script=script, env=envString)
+		elif cmd is not None:
+			command = (
+				'cd /{mnt} && '
+				'{env}{cmd}'
+			).format(mnt=mountPath, env=envString, cmd=cmd)
+
+		self.setCmd(command)
 
 		# set preemptibility
 		self.setPreemptible(preemptible)

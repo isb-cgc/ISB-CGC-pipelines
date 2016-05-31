@@ -380,7 +380,16 @@ def main(args, unknown):
 		except OSError as e:
 			pass
 
-		pipelineSpec = PipelineSchema(args.pipelineName, config, args.logsPath, args.scriptUrl, args.imageName, cores=args.cores, mem=args.mem, diskSize=args.diskSize, diskType=args.diskType, env=args.env, inputs=args.inputs, outputs=args.outputs, tag=args.tag, preemptible=args.preemptible)
+		if args.scriptUrl:
+			pipelineSpec = PipelineSchema(args.pipelineName, config, args.logsPath, args.imageName, scriptUrl=args.scriptUrl, cores=args.cores,
+			                              mem=args.mem, diskSize=args.diskSize, diskType=args.diskType, env=args.env,
+			                              inputs=args.inputs, outputs=args.outputs, tag=args.tag,
+			                              preemptible=args.preemptible)
+		elif args.cmd:
+			pipelineSpec = PipelineSchema(args.pipelineName, config, args.logsPath, args.imageName, cmd=args.cmd, cores=args.cores,
+			                              mem=args.mem, diskSize=args.diskSize, diskType=args.diskType, env=args.env,
+			                              inputs=args.inputs, outputs=args.outputs, tag=args.tag,
+			                              preemptible=args.preemptible)
 
 		pipelineBuilder = PipelineBuilder(config)
 		pipelineBuilder.addStep(pipelineSpec.getSchema())
@@ -434,7 +443,9 @@ if __name__ == "__main__":
 	submit.add_argument("--logsPath", required=True)
 	submit.add_argument("--diskSize", required=True)
 	submit.add_argument("--diskType", required=False)
-	submit.add_argument("--scriptUrl", required=True)
+	submitGrp = submit.add_mutually_exclusive_group(required=True)
+	submitGrp.add_argument("--scriptUrl")
+	submitGrp.add_argument("--cmd")
 	submit.add_argument("--imageName", required=True)
 	submit.add_argument("--cores", required=False)
 	submit.add_argument("--mem", required=False)
