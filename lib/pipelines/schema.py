@@ -1,6 +1,14 @@
+import os
+import uuid
+
+
 class PipelineSchema(object):
-	def __init__(self, name, tag, config):  # config must be an instance of pipelines.utils.PipelinesConfig
+	def __init__(self, name, config, logsPath, scriptUrl, imageName, cores=1, mem=1, diskSize=200, diskType="PERSISTENT_SSD", env=None, inputs=None, outputs=None, tag=None, children=None, metadata=None, preemptible=False):  # config must be an instance of pipelines.utils.PipelinesConfig
 		self.name = name
+
+		if tag is None:
+			tag = uuid.uuid4()
+
 		self.tag = tag
 		self._schema = {
 			"name": name,
@@ -35,6 +43,65 @@ class PipelineSchema(object):
 			}
 		}
 		self._metadata = {}
+
+		# add a disk
+		mountPath = "/{pipeline}".format(pipeline=name)
+		self.addDisk(name, diskType, diskSize, mountPath)
+
+		# add inputs
+		if inputs is not None:
+			inputMap = { ':'.join(pair.split(':')[0:-1]): pair.split(':')[-1] for pair in inputs.split(',') }
+
+			for k, i in enumerate(inputMap.keys()):
+				inputName = "input{N}".format(N=i)
+				self.addInput(inputName, name, inputMap[k], k)
+
+		# add outputs
+		if outputs is not None:
+			outputMap = { ':'.join(pair.split(':')[0:-1]): pair.split(':')[-1] for pair in outputs.split(',') }
+
+			for k, i in enumerate(outputMap.keys()):
+				outputName = "output{N}".format(N=i)
+				self.addOutput(outputName, name, outputMap[k], k)
+
+		# set log output path
+		self.setLogOutput(logsPath)
+
+		# set resources
+		self.setCpu(cores)
+		self.setMem(mem)
+
+		# prepare environment string
+		if env is not None:
+			envString = " ".join(env.split(',')) + " "
+		else:
+			envString = ""
+
+		# set docker
+		script = os.path.basename(scriptUrl)
+		self.setImage(imageName)
+		self.addInput("pipelineScript", name, "/{mnt}/{script}".format(mnt=mountPath, script=script))
+		self.setCmd((
+			'cd /{mnt} &&'
+			'chmod u+x {script} &&'
+			'{env}./{script}'
+		).format(mnt=mountPath, script=script, env=envString))
+
+		# set preemptibility
+		self.setPreemptible(preemptible)
+
+		# set metadata
+		if metadata is not None:
+			metadataMap = { pair.split('=')[0]: pair.split('=')[1] for pair in metadata.split(',') }
+			self.addSchemaMetadata(**metadataMap)
+
+		# set children
+		if children is not None:
+			childList = ','.split(children)
+
+			for c in childList:
+				self.addChild(c)
+
 	
 	def getSchema(self):
 		return self._schema
@@ -114,4 +181,5 @@ class PipelineSchema(object):
 			return self._metadata[key]
 		else:
 			raise LookupError("Metadata key '{k}' not found".format(k=key))
+
 
