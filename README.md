@@ -7,7 +7,7 @@ A framework for running bioinformatic workflows and pipelines at scale using the
 In order to use the ISB-CGC-pipelines tools, the following requirements must be met:
 - You must be an owner or editor of a Google Cloud Project
 - You must have the following APIs enabled in your Google Cloud Project: Google Compute Engine, Google Genomics
-- (Optional) Install the Google Cloud SDK, including "alpha" subcommands for the `gcloud`.  
+- (Optional) Install the Google Cloud SDK, including "alpha" subcommands for the `gcloud` command.  
 
 ## Installation
 
