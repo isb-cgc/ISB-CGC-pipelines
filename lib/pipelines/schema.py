@@ -52,7 +52,7 @@ class PipelineSchema(object):
 		if inputs is not None:
 			inputMap = { ':'.join(pair.split(':')[0:-1]): pair.split(':')[-1] for pair in inputs.split(',') }
 
-			for k, i in enumerate(inputMap.keys()):
+			for i, k in enumerate(inputMap.keys()):
 				inputName = "input{N}".format(N=i)
 				self.addInput(inputName, name, inputMap[k], k)
 
@@ -60,7 +60,7 @@ class PipelineSchema(object):
 		if outputs is not None:
 			outputMap = { ':'.join(pair.split(':')[0:-1]): pair.split(':')[-1] for pair in outputs.split(',') }
 
-			for k, i in enumerate(outputMap.keys()):
+			for i, k in enumerate(outputMap.keys()):
 				outputName = "output{N}".format(N=i)
 				self.addOutput(outputName, name, outputMap[k], k)
 
