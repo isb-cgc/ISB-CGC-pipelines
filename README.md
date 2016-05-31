@@ -29,7 +29,7 @@ cd ISB-CGC-pipelines && sudo ./install.sh
 
 A special startup script has been developed by the ISB for installing some common tools in an automated fashion on a Google Compute Engine VM.  ISB-CGC-pipelines is installed by default when the startup script is used to bootstrap a VM.  
 
-To use the startup script, make sure that you're current workstation is equipped with the Google Cloud SDK and then run the following command (or a variation thereof) to start the bootstrapping process:
+To use the startup script, make sure that your current workstation is equipped with the Google Cloud SDK and then run the following command (or a variation thereof) to start the bootstrapping process:
 
 ```
 gcloud compute instances create my-pipeline-workstation --metadata startup-script-url=gs://isb-cgc-open/vm-startup-scripts/isb-cgc-workstation-startup.sh
@@ -41,7 +41,7 @@ Once the instance is ready, you can ssh to it using the following command:
 gcloud compute ssh my-pipeline-workstation
 ```
 
-For more information about the `gcloud compute` command, please refer to the [documentation](https://cloud.google.com/compute/docs/gcloud-compute/).
+For more information about the `gcloud compute` command and all of its possible arguments, please refer to the [documentation](https://cloud.google.com/compute/docs/gcloud-compute/).
 
 ## Basic Usage
 
