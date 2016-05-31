@@ -15,7 +15,7 @@ if [[ -z ${OUTPUT_PREFIX+x} ]]; then
 	OUTPUT_PREFIX=$(python -c "import uuid; print uuid.uuid4()")
 fi
 
-if [[ "${EXT}" == "fastq" or "${EXT}" == "bam" ]]; then
+if [[ "${EXT}" == "fastq" || "${EXT}" == "bam" ]]; then
 	fastqc $INPUT_FILENAME && 
 	mv "${INPUT_FILE_BASE}_fastqc.zip" "${OUTPUT_PREFIX}-${INPUT_FILE_BASE}_fastqc.zip"
 	mv "${INPUT_FILE_BASE}_fastqc.html" "${OUTPUT_PREFIX}-${INPUT_FILE_BASE}_fastqc.html"
