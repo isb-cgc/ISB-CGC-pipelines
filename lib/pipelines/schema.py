@@ -81,15 +81,15 @@ class PipelineSchema(object):
 		self.setImage(imageName)
 		if scriptUrl is not None:
 			script = os.path.basename(scriptUrl)
-			self.addInput("pipelineScript", name, "/{mnt}/{script}".format(mnt=mountPath, script=script), scriptUrl)
+			self.addInput("pipelineScript", name, "{mnt}/{script}".format(mnt=mountPath, script=script), scriptUrl)
 			command = (
-				'cd /{mnt} && '
+				'cd {mnt} && '
 				'chmod u+x {script} && '
 				'{env}./{script}'
 			).format(mnt=mountPath, script=script, env=envString)
 		elif cmd is not None:
 			command = (
-				'cd /{mnt} && '
+				'cd {mnt} && '
 				'{env}{cmd}'
 			).format(mnt=mountPath, env=envString, cmd=cmd)
 
