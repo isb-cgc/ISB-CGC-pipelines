@@ -392,7 +392,7 @@ def main(args, unknown):
 			                              preemptible=args.preemptible)
 
 		pipelineBuilder = PipelineBuilder(config)
-		pipelineBuilder.addStep(pipelineSpec.getSchema())
+		pipelineBuilder.addStep(pipelineSpec)
 		pipelineBuilder.run()
 
 	elif args.subcommand == "stop":
