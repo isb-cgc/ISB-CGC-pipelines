@@ -221,33 +221,38 @@ def getJobsList(args, unknown, config):
 		return ''.join([' ' for x in range(maxLen - actualLen + 4)])
 
 	if len(jobs) > 0:
-		jobIdLengths = [len(str(x.job_id)) for x in jobs]
+		jobIdLengths = [len(str(x.job_id)) if x.job_id is not None else len(str("None")) for x in jobs]
 		jobIdLengths.append(len("JOBID"))
 		maxJobIdLen = max(jobIdLengths)
 
-		pipelineLengths = [len(x.pipeline_name) for x in jobs]
+		pipelineLengths = [len(x.pipeline_name) if x.pipeline_name is not None else len(str("None")) for x in jobs]
 		pipelineLengths.append(len("PIPELINE"))
 		maxPipelineLen = max(pipelineLengths)
 
-		operationIdLengths = [len(x.operation_id.split('/')[1]) for x in jobs]
+		operationIdLengths = [len(x.operation_id.split('/')[1]) if x.operation_id is not None else len(str("None")) for x in jobs]
 		operationIdLengths.append(len("OPERATION ID"))
 		maxOperationIdLen = max(operationIdLengths)
 
-		statusLengths = [len(x.current_status) for x in jobs]
+		statusLengths = [len(x.current_status) if x.current_status is not None else len(str("None")) for x in jobs]
 		statusLengths.append(len("STATUS"))
 		maxStatusLen = max(statusLengths)
 
-		tagLengths = [len(x.tag) for x in jobs]
+		tagLengths = [len(x.tag) if x.tag is not None else len(str("None")) for x in jobs]
 		tagLengths.append(len("TAG"))
 		maxTagLen = max(tagLengths)
 
-		createTimeLengths = [len(x.create_time) for x in jobs]
+		createTimeLengths = [len(x.create_time) if x.create_time is not None else len(str("None")) for x in jobs]
 		createTimeLengths.append(len("CREATE TIME"))
 		maxCreateTimeLen = max(createTimeLengths)
 
 		print header % (fieldPadding(maxJobIdLen, len("JOBID")), fieldPadding(maxPipelineLen, len("PIPELINE")), fieldPadding(maxOperationIdLen, len("OPERATION ID")), fieldPadding(maxTagLen, len("TAG")), fieldPadding(maxStatusLen, len("STATUS")), fieldPadding(maxCreateTimeLen, len("CREATE TIME")))
 		for j in jobs:
-			print jobStatusString.format(jobId=j.job_id, pipeline=j.pipeline_name, operationId=j.operation_id.split('/')[1], tag=j.tag, status=j.current_status, createTime=j.create_time, preemptions=j.preemptions) % (fieldPadding(maxJobIdLen, len(str(j.job_id))), fieldPadding(maxPipelineLen, len(j.pipeline_name)), fieldPadding(maxOperationIdLen, len(j.operation_id.split('/')[1])), fieldPadding(maxTagLen, len(j.tag)), fieldPadding(maxStatusLen, len(j.current_status)), fieldPadding(maxCreateTimeLen, len(j.create_time)))
+			if j.operation_id is not None:
+				op = j.operation_id.split('/')[1]
+			else:
+				op = "None"
+
+			print jobStatusString.format(jobId=j.job_id, pipeline=j.pipeline_name, operationId=op, tag=j.tag, status=j.current_status, createTime=j.create_time, preemptions=j.preemptions) % (fieldPadding(maxJobIdLen, len(str(j.job_id))), fieldPadding(maxPipelineLen, len(j.pipeline_name)), fieldPadding(maxOperationIdLen, len(j.operation_id.split('/')[1])), fieldPadding(maxTagLen, len(j.tag)), fieldPadding(maxStatusLen, len(j.current_status)), fieldPadding(maxCreateTimeLen, len(j.create_time)))
 
 	else:
 		print "No jobs found"

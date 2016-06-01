@@ -94,6 +94,11 @@ class PipelineDbUtils(object):
 		self._sqliteConn.commit()
 
 	def updateJob(self, jobId, setValues): # setValues -> dict
+		if "preemptions" in setValues.keys():
+			query = "UPDATE jobs SET preemptions = preemptions + 1 WHERE job_id = ?"
+			self._pipelinesDb.execute(query)
+			setValues.pop("preemptions")
+
 		query = "UPDATE jobs SET {values} WHERE job_id = ?".format(values=','.join(["{v} = ?".format(v=v) for v in setValues.iterkeys()]))
 
 		self._pipelinesDb.execute(query, tuple(setValues.itervalues()) + (jobId,))
