@@ -160,26 +160,28 @@ def getJobLogs(args, config):
 
 	jobInfo = pipelineDbUtils.getJobInfo(select=["stdout_log", "stderr_log", "gcs_log_path"], where={"job_id": args.jobId})
 
-	if args.stdout:
-		try:
-			stdoutLogFile = subprocess.check_output(["gsutil", "cat", os.path.join(jobInfo[0].gcs_log_path, jobInfo[0].stdout_log)])
-		except subprocess.CalledProcessError as e:
-			print "ERROR: couldn't get the stdout log : {reason}".format(reason=e)
-			exit(-1)
-		print "STDOUT:\n"
-		print stdoutLogFile
-		print "---------\n"
+	with open(os.devnull, 'w') as fnull:
+		if args.stdout:
+			try:
+				stdoutLogFile = subprocess.check_output(["gsutil", "cat", os.path.join(jobInfo[0].gcs_log_path, jobInfo[0].stdout_log)], stderr=fnull)
+			except subprocess.CalledProcessError as e:
+				print "ERROR: couldn't get the stdout log : {reason}".format(reason=e)
+				exit(-1)
 
-	if args.stderr:
-		try:
-			stderrLogFile = subprocess.check_output(["gsutil", "cat", os.path.join(jobInfo[0].gcs_log_path, jobInfo[0].stderr_log)])
-		except subprocess.CalledProcessError as e:
-			print "ERROR: couldn't get the stderr log : {reason}".format(reason=e)
-			exit(-1)
-		
-		print "STDERR:\n"
-		print stderrLogFile
-		print "---------\n"
+			print "STDOUT:\n"
+			print stdoutLogFile
+			print "---------\n"
+
+		if args.stderr:
+			try:
+				stderrLogFile = subprocess.check_output(["gsutil", "-q", "cat", os.path.join(jobInfo[0].gcs_log_path, jobInfo[0].stderr_log)], stderr=fnull)
+			except subprocess.CalledProcessError as e:
+				print "ERROR: couldn't get the stderr log : {reason}".format(reason=e)
+				exit(-1)
+
+			print "STDERR:\n"
+			print stderrLogFile
+			print "---------\n"
 
 	pipelineDbUtils.closeConnection()
 
