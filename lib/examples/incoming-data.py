@@ -1,8 +1,8 @@
 import os
 import argparse
-from lib.pipelines.builder import PipelineBuilder
-from lib.pipelines.schema import PipelineSchema
-from lib.pipelines.utils import PipelinesConfig, DataUtils
+from pipelines.builder import PipelineBuilder
+from pipelines.schema import PipelineSchema
+from pipelines.utils import PipelinesConfig, DataUtils
 
 # Parse Arguments
 parser = argparse.ArgumentParser()
