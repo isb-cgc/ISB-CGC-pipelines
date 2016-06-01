@@ -38,6 +38,7 @@ cghubSchema = PipelineSchema("cghub", pipelinesConfig, args.cghubLogs, "b.gcr.io
                              diskSize=DataUtils.calculateDiskSize(analysisId=args.analysisId, roundToNearestGbInterval=100),
                              diskType="PERSISTENT_SSD",
                              env="ANALYSIS_ID={analysisId},CGHUB_KEY={key}".format(analysisId=args.analysisId, key=os.path.basename(args.cghubKey)),
+                             inputs="{cghubKey}:/{cghubKeyFileName}".format(cghubKey=args.cghubKey, cghubKeyFileName=os.path.basename(args.cghubKey)),
                              outputs="{analysisId}/*:{outputPath}".format(analysisId=args.analysisId, outputPath=objectPath),
                              tag=args.analysisId,
                              preemptible=True)
