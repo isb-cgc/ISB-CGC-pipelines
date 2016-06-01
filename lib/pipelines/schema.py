@@ -61,7 +61,7 @@ class PipelineSchema(object):
 
 		# add outputs
 		if outputs is not None:
-			outputMap = { ':'.join(pair.split(':')[0:-1]): pair.split(':')[-1] for pair in outputs.split(',') }
+			outputMap = { ':'.join(pair.split(':')[1:-1]): pair.split(':')[0] for pair in outputs.split(',') }
 
 			for i, k in enumerate(outputMap.keys()):
 				outputName = "output{N}".format(N=i)
