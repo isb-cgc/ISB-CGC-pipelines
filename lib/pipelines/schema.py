@@ -103,7 +103,7 @@ class PipelineSchema(object):
 
 		# set metadata
 		if metadata is not None:
-			metadataMap = { pair.split('=')[0]: pair.split('=')[1] for pair in metadata.split(',') }
+			metadataMap = { pair.split('=')[0]: pair.split('=')[1].split(',') for pair in metadata.split(',') }
 			self.addSchemaMetadata(**metadataMap)
 
 		# set children

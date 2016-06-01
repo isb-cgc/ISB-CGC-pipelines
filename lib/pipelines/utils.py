@@ -200,6 +200,8 @@ class DataUtils(object):
 
 		if scalingFactor is not None:
 			scalingFactor = int(scalingFactor)
+		else:
+			scalingFactor = 1
 
 		if roundToNearestGbInterval is not None:
 			roundTo = float(roundToNearestGbInterval) * 1000000000

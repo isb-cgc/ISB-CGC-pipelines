@@ -2,13 +2,14 @@ import os
 import argparse
 from lib.pipelines.builder import PipelineBuilder
 from lib.pipelines.schema import PipelineSchema
-from lib.pipelines.utils import PipelinesConfig
+from lib.pipelines.utils import PipelinesConfig, DataUtils
 
 # Parse Arguments
 parser = argparse.ArgumentParser()
 parser.add_argument("--analysisId", required=True)
 parser.add_argument("--cghubKey", required=False)
 parser.add_argument("--cghubOutput", required=True)
+parser.add_argument("--cghubScript", required=True)
 parser.add_argument("--cghubLogs", required=True)
 parser.add_argument("--bbtFilters", required=True)
 parser.add_argument("--bbtOutput", required=True)
@@ -31,20 +32,20 @@ pipelineBuilder = PipelineBuilder(pipelinesConfig)
 
 setMetaFiles = []
 
-## CGHUB STEP ##
+files = DataUtils.getAnalysisDetail(args.analysisId)["result_set"]["results"][0]["files"]
 
-from lib.schema_generators.cghub import generate
+objectPath = DataUtils.constructObjectPath(args.analysisId, args.cghubOutput)
 
-cghubArgs = ["--analysisId", args.analysisId, "--cghubKey", args.cghubKey, "--diskSize", args.diskSize, "--logsPath", args.cghubLogs, "--outputPath", args.cghubOutput]
-
-if args.preemptible:
-	cghubArgs.append("--preemptible")
-
-try:
-	cghubSchema = generate(cghubArgs, pipelinesConfig) 
-except LookupError as e:
-	print "ERROR: Couldn't start pipeline for analysis ID {a}: {reason}".format(a=args.analysisId, reason=e)
-	exit(-1)
+cghubSchema = PipelineSchema("cghub", pipelinesConfig, args.cghubLogs, "b.gcr.io/isb-cgc-public-docker-images/gtdownload",
+                             scriptUrl=args.cghubScript,
+                             cores=4,
+                             diskSize=DataUtils.calculateDiskSize(analysisId=args.analysisId, roundToNearestGbInterval=100),
+                             diskType="PERSISTENT_SSD",
+                             env="ANALYSIS_ID={analysisId},CGHUB_KEY={key}".format(analysisId=args.analysisId, key=os.path.basename(args.cghubKey)),
+                             outputs="{analysisId}/*:{outputPath}".format(analysisId=args.analysisId, outputPath=objectPath),
+                             tag=args.analysisId,
+                             metadata="files:{files}".format(files=','.join([x["filename"] for x in files])),
+                             preemptible=True)
 
 pipelineBuilder.addStep(cghubSchema)
 
@@ -57,7 +58,6 @@ foundBam = False
 foundFastq = False
 
 files = cghubSchema.getSchemaMetadata("files")
-objectPath = cghubSchema.getSchemaMetadata("objectPath")
 
 for f in files:
 	ext = f["filename"].split('.')[-1]
@@ -74,67 +74,52 @@ for f in files:
 		fastqFileName = f["filename"]
 		fastqFileBase = '.'.join(f["filename"].split('.')[0:-1])
 
+
+
+# FASTQC STEP
+fastqcOutput = DataUtils.constructObjectPath(args.analysisId, args.fastqcOutput)
+fastqcSchema = PipelineSchema("fastqc", pipelinesConfig, args.fastqcLogs, "b.gcr.io/isb-cgc-public-docker-images/fastqc",
+                              scriptUrl="gs://isb-cgc-data-02-misc/pipeline-scripts/fastqc.sh",
+                              diskSize=DataUtils.calculateDiskSize(analysisId=args.analysisId, roundToNearestGbInterval=100),
+                              diskType="PERSISTENT_SSD",
+                              inputs=",".join([os.path.join(objectPath, x["filename"]) + ":" + bamFileName for x in files]),
+                              outputs="*_fastqc.zip:{fastqcOutput},*_fastqc.html:{fastqcOutput}".format(fastqcOutput=fastqcOutput),
+                              env="INPUT_FILENAME={bamFile},OUTPUT_PREFIX={analysisId}".format(bamFile=bamFileName, analysisId=args.analysisId),
+                              tag=args.analysisId,
+                              preemptible=True)
+
+setMetaFiles.append(os.path.join(args.fastqcOutput, objectPath, "{analysisId}*".format(analysisId=analysisId))) # will glob patterns work with `gsutil setmeta ...`?
+pipelineBuilder.addStep(fastqcSchema)
+cghubSchema.addChild(fastqcSchema)
+setMetaParents.append(fastqcSchema)
+
 if foundBam:
-	# BIOBLOOMCATEGORIZER STEP
-	from lib.schema_generators.biobloomcategorizer import generate
-
-	bbcArgs = ["--bamFile", os.path.join(args.cghubOutput, objectPath, bamFileName), "--filters", args.bbtFilters, "--tag", args.analysisId, "--diskSize", args.diskSize, "--outputPath", os.path.join(args.bbtOutput, objectPath), "--logsPath", args.bbtLogs]
-
-	if args.preemptible:
-		bbcArgs.append("--preemptible")
-
-	bbcSchema = generate(bbcArgs, pipelinesConfig) 
-	
-	setMetaFiles.append(os.path.join(args.cghubOutput, objectPath, bamFileName))
-
-	pipelineBuilder.addStep(bbcSchema)
-	cghubSchema.addChild(bbcSchema)
-
-	setMetaParents.append(bbcSchema)
-
 	if not foundBai:
-		from lib.schema_generators.samtoolsindex import generate
 
-		samtoolsIndexArgs = ["--bamFile", os.path.join(args.cghubOutput, objectPath, bamFileName), "--tag", args.analysisId, "--diskSize", args.diskSize, "--outputPath", os.path.join(args.cghubOutput, objectPath), "--logsPath", args.samtoolsIndexLogs]
-
-		if args.preemptible:
-			samtoolsIndexArgs.append("--preemptible")
-
-		samtoolsIndexSchema = generate(samtoolsIndexArgs, pipelinesConfig)
-
-		baiFileName = "{bam}.bai".format(bam=os.path.basename(bamFileName))
+		samtoolsIndexSchema = PipelineSchema("samtools-index", pipelinesConfig, args.samtoolsIndexLogs, "b.gcr.io/isb-cgc-public-docker-images/samtools:1.3.1",
+		                                     cmd="samtools index {filename}".format(),
+		                                     diskSize=DataUtils.calculateDiskSize(analysisId=args.analysisId, roundToNearestGbInterval=100),
+		                                     diskType="PERSISTENT_SSD",
+		                                     inputs=",".join([os.path.join(objectPath, x["filename"]) + ":" + bamFileName for x in files]),
+		                                     outputs="{filename}.bai:{outputPath}".format(filename=bamFileName, outputPath=objectPath),
+		                                     tag=args.analysisId,
+		                                     preemptible=True)
 
 		pipelineBuilder.addStep(samtoolsIndexSchema)
 		cghubSchema.addChild(samtoolsIndexSchema)
+		fastqcSchema.addChild(samtoolsIndexSchema)
 
 		setMetaParents.append(samtoolsIndexSchema)
 
 	setMetaFiles.append(os.path.join(args.cghubOutput, objectPath, baiFileName))
 
-
-elif foundFastq:
-	# FASTQC STEP
-	from lib.schema_generators.fastqc import generate
-
-	fastqcArgs = ["--fastqFile", fastqFileName, "--tag", args.analysisId, "--outputPath", os.path.join(args.fastqcOutput, objectPath), "--diskSize", args.diskSize, "--logsPath", args.fastqcLogs]
-
-	if args.preemptible:
-		fastqcArgs.append("--preemptible")
-
-	fastqcSchema = generate(fastqcArgs, pipelinesConfig)
-	setMetaFiles.append(os.path.join(args.fastqcOutput, objectPath, "{analysisId}*".format(analysisId=analysisId))) # will glob patterns work with `gsutil setmeta ...`?
-	pipelineBuilder.addStep(fastqcSchema)
-	cghubSchema.addChild(fastqcSchema)
-	setMetaParents.append(fastqcSchema)
-	
-
 # SETMETA STEP
 
-setMetaSchema = PipelineSchema('setmeta', args.analysisId, pipelinesConfig)
-
-setMetaSchema.setImage("google/cloud-sdk")
-setMetaSchema.setCmd('gsutil setmeta -h \"x-goog-meta-analysis-id:{analysisId}\" {setMetaFiles}'.format(analysisId=args.analysisId, setMetaFiles=' '.join(setMetaFiles)))
-setMetaSchema.setLogOutput(args.setMetaLogs)
+setMetaSchema = PipelineSchema('setmeta', pipelinesConfig, args.setMetaLogs, "google/cloud-sdk",
+                               cmd='gsutil setmeta -h \"x-goog-meta-analysis-id:{analysisId}\" {setMetaFiles}'.format(analysisId=args.analysisId, setMetaFiles=' '.join(setMetaFiles)),
+                               diskSize=10,
+                               tag=args.analysisId,
+                               preemptible=True)
 
 for p in setMetaParents:
 	p.addChild(setMetaSchema)
