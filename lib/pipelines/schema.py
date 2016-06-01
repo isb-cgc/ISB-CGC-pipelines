@@ -55,6 +55,7 @@ class PipelineSchema(object):
 		self.addDisk(name, diskType, diskSize, mountPath)
 
 		# add inputs
+		# TODO: input validation
 		if inputs is not None:
 			inputMap = {':'.join(pair.split(':')[0:-1]): pair.split(':')[-1] for pair in inputs.split(',')}
 
@@ -63,6 +64,7 @@ class PipelineSchema(object):
 				self.addInput(inputName, name, inputMap[k], k)
 
 		# add outputs
+		# TODO: input validation
 		if outputs is not None:
 			outputMap = {pair.split(':')[0]: ':'.join(pair.split(':')[1:]) for pair in outputs.split(',')}
 
