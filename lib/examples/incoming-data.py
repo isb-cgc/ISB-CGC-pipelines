@@ -15,7 +15,6 @@ parser.add_argument("--fastqcOutput", required=True)
 parser.add_argument("--fastqcLogs", required=True)
 parser.add_argument("--samtoolsIndexLogs", required=True)
 parser.add_argument("--setMetaLogs", required=True)
-parser.add_argument("--diskSize", required=True)
 parser.add_argument("--preemptible", action="store_true", default=False, required=False)
 args = parser.parse_args()
 
@@ -90,7 +89,7 @@ setMetaParents.append(fastqcSchema)
 
 if foundBam:
 	if not foundBai:
-
+		baiFileName = "{filename}.bai".format(filename=bamFileName)
 		samtoolsIndexSchema = PipelineSchema("samtools-index", pipelinesConfig, args.samtoolsIndexLogs, "b.gcr.io/isb-cgc-public-docker-images/samtools:1.3.1",
 		                                     cmd="samtools index {filename}".format(filename=bamFileName),
 		                                     diskSize=DataUtils.calculateDiskSize(analysisId=args.analysisId, roundToNearestGbInterval=100),
