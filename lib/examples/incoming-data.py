@@ -41,7 +41,6 @@ cghubSchema = PipelineSchema("cghub", pipelinesConfig, args.cghubLogs, "b.gcr.io
                              env="ANALYSIS_ID={analysisId},CGHUB_KEY={key}".format(analysisId=args.analysisId, key=os.path.basename(args.cghubKey)),
                              outputs="{analysisId}/*:{outputPath}".format(analysisId=args.analysisId, outputPath=objectPath),
                              tag=args.analysisId,
-                             metadata="files:{files}".format(files=','.join([x["filename"] for x in files])),
                              preemptible=True)
 
 pipelineBuilder.addStep(cghubSchema)
@@ -54,7 +53,6 @@ foundBai = False
 foundBam = False
 foundFastq = False
 
-files = cghubSchema.getSchemaMetadata("files")
 
 for f in files:
 	ext = f["filename"].split('.')[-1]
