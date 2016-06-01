@@ -252,7 +252,7 @@ def getJobsList(args, unknown, config):
 			else:
 				op = "None"
 
-			print jobStatusString.format(jobId=j.job_id, pipeline=j.pipeline_name, operationId=op, tag=j.tag, status=j.current_status, createTime=j.create_time, preemptions=j.preemptions) % (fieldPadding(maxJobIdLen, len(str(j.job_id))), fieldPadding(maxPipelineLen, len(j.pipeline_name)), fieldPadding(maxOperationIdLen, len(j.operation_id.split('/')[1])), fieldPadding(maxTagLen, len(j.tag)), fieldPadding(maxStatusLen, len(j.current_status)), fieldPadding(maxCreateTimeLen, len(j.create_time)))
+			print jobStatusString.format(jobId=j.job_id, pipeline=j.pipeline_name, operationId=op, tag=j.tag, status=j.current_status, createTime=j.create_time, preemptions=j.preemptions) % (fieldPadding(maxJobIdLen, len(str(j.job_id))), fieldPadding(maxPipelineLen, len(j.pipeline_name)), fieldPadding(maxOperationIdLen, len(op), fieldPadding(maxTagLen, len(j.tag)), fieldPadding(maxStatusLen, len(j.current_status)), fieldPadding(maxCreateTimeLen, len(j.create_time)))
 
 	else:
 		print "No jobs found"
