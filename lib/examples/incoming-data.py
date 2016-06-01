@@ -83,7 +83,7 @@ fastqcSchema = PipelineSchema("fastqc", pipelinesConfig, args.fastqcLogs, "b.gcr
                               tag=args.analysisId,
                               preemptible=True)
 
-setMetaFiles.append(os.path.join(args.fastqcOutput, objectPath, "{analysisId}*".format(analysisId=analysisId))) # will glob patterns work with `gsutil setmeta ...`?
+setMetaFiles.append(os.path.join(args.fastqcOutput, objectPath, "{analysisId}*".format(analysisId=args.analysisId))) # will glob patterns work with `gsutil setmeta ...`?
 pipelineBuilder.addStep(fastqcSchema)
 cghubSchema.addChild(fastqcSchema)
 setMetaParents.append(fastqcSchema)
