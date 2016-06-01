@@ -92,7 +92,7 @@ if foundBam:
 	if not foundBai:
 
 		samtoolsIndexSchema = PipelineSchema("samtools-index", pipelinesConfig, args.samtoolsIndexLogs, "b.gcr.io/isb-cgc-public-docker-images/samtools:1.3.1",
-		                                     cmd="samtools index {filename}".format(),
+		                                     cmd="samtools index {filename}".format(filename=bamFileName),
 		                                     diskSize=DataUtils.calculateDiskSize(analysisId=args.analysisId, roundToNearestGbInterval=100),
 		                                     diskType="PERSISTENT_SSD",
 		                                     inputs=",".join([os.path.join(objectPath, x["filename"]) + ":" + bamFileName for x in files]),
