@@ -16,10 +16,10 @@ class DependentJobsHandler(pyinotify.ProcessEvent):
 
 	def process_IN_CREATE(self, event):
 		if re.match('^.*/SUCCEEDED/.*$', event.pathname):
-			children = self._pipelineDbUtils.getChildJobs(event.name)
+			children = [x[0] for x in self._pipelineDbUtils.getChildJobs(event.name)]
 			
 			if len(children) > 0:
-				PipelineSchedulerUtils.writeStdout("Checking child jobs: {children}".format(children=','.join([str(x[0]) for x in list(children)])))
+				PipelineSchedulerUtils.writeStdout("Checking child jobs: {children}".format(children=','.join([str(x) for x in children])))
 				for c in children:
 					parents = [x[0] for x in self._pipelineDbUtils.getParentJobs(c)]
 					succeededParents = 1
