@@ -26,6 +26,9 @@ class DependentJobsHandler(pyinotify.ProcessEvent):
 
 					PipelineSchedulerUtils.writeStdout("Checking parent jobs: {parents}".format(parents=','.join([str(x) for x in parents])))
 
+					PipelineSchedulerUtils.writeStdout(type(parents))
+					PipelineSchedulerUtils.writeStdout(type(parents.remove(event.name)))
+
 					for p in parents.remove(int(event.name)):
 						status = self._pipelineDbUtils.getJobInfo(select=["current_status"], where={"job_id": p})[0].current_status
 
