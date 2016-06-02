@@ -19,17 +19,13 @@ class DependentJobsHandler(pyinotify.ProcessEvent):
 			children = [x[0] for x in self._pipelineDbUtils.getChildJobs(event.name)]
 			
 			if len(children) > 0:
-				PipelineSchedulerUtils.writeStdout("Checking child jobs: {children}".format(children=','.join([str(x) for x in children])))
 				for c in children:
 					parents = [x[0] for x in self._pipelineDbUtils.getParentJobs(c)]
+					totalParents = len(parents)
 					succeededParents = 1
+					parents.remove(int(event.name))
 
-					PipelineSchedulerUtils.writeStdout("Checking parent jobs: {parents}".format(parents=','.join([str(x) for x in parents])))
-
-					PipelineSchedulerUtils.writeStdout(str(type(parents)))
-					PipelineSchedulerUtils.writeStdout(str(type(parents.remove(int(event.name)))))
-
-					for p in parents.remove(int(event.name)):
+					for p in parents:
 						status = self._pipelineDbUtils.getJobInfo(select=["current_status"], where={"job_id": p})[0].current_status
 
 						if status == "SUCCEEDED":
@@ -38,7 +34,7 @@ class DependentJobsHandler(pyinotify.ProcessEvent):
 						else:
 							break
 
-					if len(p) == succeededParents:
+					if totalParents == succeededParents:
 						shutil.copy(os.path.join(self._config.pipelines_home, "DEPENDENT", str(c)), os.path.join(self._config.pipelines_home, "WAITING", str(c)))
 						os.remove(os.path.join(self._config.pipelines_home, "DEPENDENT", str(c)))
 		
