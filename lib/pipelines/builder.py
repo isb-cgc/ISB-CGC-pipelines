@@ -17,6 +17,9 @@ class PipelineBuilder(object):
 
 		self._pipelines.append(self._dependencyMap[root.name])
 
+	def getSchema(self):
+		return self._schema
+
 	def run(self):	
 		# generate schema
 		self._generateSchema()

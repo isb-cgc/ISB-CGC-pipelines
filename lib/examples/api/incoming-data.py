@@ -4,6 +4,8 @@ from pipelines.builder import PipelineBuilder
 from pipelines.schema import PipelineSchema
 from pipelines.utils import PipelinesConfig, DataUtils
 
+import pprint
+
 # Parse Arguments
 parser = argparse.ArgumentParser()
 parser.add_argument("--analysisId", required=True)
@@ -120,6 +122,8 @@ for p in setMetaParents:
 	p.addChild(setMetaSchema)
 
 pipelineBuilder.addStep(setMetaSchema)
+
+pprint.pprint(pipelineBuilder.getSchema())
 
 pipelineBuilder.run()	
 
