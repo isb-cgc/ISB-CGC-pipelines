@@ -19,7 +19,7 @@ class DependentJobsHandler(pyinotify.ProcessEvent):
 			children = self._pipelineDbUtils.getChildJobs(event.name)
 			
 			if len(children) > 0:
-				PipelineSchedulerUtils.writeStdout("Checking child jobs: {children}".format(children=','.join(children)))
+				PipelineSchedulerUtils.writeStdout("Checking child jobs: {children}".format(children=','.join(list(children))))
 				for c in children:
 					parents = self._pipelineDbUtils.getParentJobs(c)
 					succeededParents = 1
