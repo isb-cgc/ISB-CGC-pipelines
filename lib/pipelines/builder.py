@@ -3,7 +3,7 @@ import json
 from jsonspec.validators import load  # jsonspec is licensed under BSD
 from utils import PipelineDbUtils
 
-
+import pprint
 class PipelineBuilder(object):
 	def __init__(self, config):
 		self._pipelines = []
@@ -17,12 +17,12 @@ class PipelineBuilder(object):
 
 		self._pipelines.append(self._dependencyMap[root.name])
 
-	def getSchema(self):
-		return self._schema
-
 	def run(self):	
 		# generate schema
 		self._generateSchema()
+
+		pprint.pprint(self._schema)
+		pprint.pprint(self._dependencyMap)
 
 		# schema validation
 		self._validateSchema()

@@ -123,8 +123,6 @@ for p in setMetaParents:
 
 pipelineBuilder.addStep(setMetaSchema)
 
-pprint.pprint(pipelineBuilder.getSchema())
-
 pipelineBuilder.run()	
 
 
