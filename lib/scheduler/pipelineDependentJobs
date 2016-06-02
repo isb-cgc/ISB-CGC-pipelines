@@ -24,7 +24,7 @@ class DependentJobsHandler(pyinotify.ProcessEvent):
 					parents = [x[0] for x in self._pipelineDbUtils.getParentJobs(c)]
 					succeededParents = 1
 
-					for p in parents.remove(event.name):
+					for p in parents.remove(int(event.name)):
 						status = self._pipelineDbUtils.getJobInfo(select=["current_status"], where={"job_id": p})[0].current_status
 
 						if status == "SUCCEEDED":
