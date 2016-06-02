@@ -104,7 +104,7 @@ if foundBam:
 
 		pipelineBuilder.addStep(samtoolsIndexSchema)
 		cghubSchema.addChild(samtoolsIndexSchema)
-		fastqcSchema.addChild(samtoolsIndexSchema)
+		samtoolsIndexSchema.addChild(fastqcSchema)
 
 		setMetaParents.append(samtoolsIndexSchema)
 
