@@ -16,9 +16,10 @@ class DependentJobsHandler(pyinotify.ProcessEvent):
 
 	def process_IN_CREATE(self, event):
 		if re.match('^.*/SUCCEEDED/.*$', event.pathname):
-			children = self._pipelineDbUtils.getChildJobs(event.pathname)
+			children = self._pipelineDbUtils.getChildJobs(event.name)
 			
 			if len(children) > 0:
+				PipelineSchedulerUtils.writeStdout("Checking child jobs: {children}".format(children=','.join(children)))
 				for c in children:
 					parents = self._pipelineDbUtils.getParentJobs(c)
 					succeededParents = 1
@@ -40,6 +41,9 @@ class DependentJobsHandler(pyinotify.ProcessEvent):
 						childJobInfo = self._pipelineDbUtils.getJobInfo(select=["pipeline_name", "tag"], where={"job_id": c})
 						parentJobInfo = self._pipelineDbUtils.getJobInfo(select=["pipeline_name", "tag"], where={"job_id": p})
 						PipelineSchedulerUtils.writeStderr("Couldn't start job {c} (pipeline: {cp}, tag: {ct}) : depends on job {p} (pipeline: {pp}, tag: {pt}), which has a status of {s}".format(c=str(c), cp=childJobInfo[0].pipeline_name, ct=childJobInfo[0].tag, p=p, pp=parentJobInfo[0].pipeline_name, pt=parentJobInfo[0].tag, s=status))
+
+			else:
+				PipelineSchedulerUtils.writeStdout("Job {jobid} has no child jobs to check!".format(jobid=event.name))
 
 		else:
 			jobInfo = self._pipelineDbUtils.getJobInfo(select=["pipeline_name", "tag"], where={"job_id": event.name})
