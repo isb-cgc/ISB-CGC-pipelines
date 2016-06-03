@@ -412,7 +412,7 @@ def main(args, unknown):
 
 	elif args.subcommand == "restart":
 		config = PipelinesConfig(PIPELINES_CONFIG_PATH)
-		restartJobs(args, unknown, config) 
+		restartJobs(args, config)
 
 	elif args.subcommand == "clean":
 		config = PipelinesConfig(PIPELINES_CONFIG_PATH)
