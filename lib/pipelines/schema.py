@@ -4,7 +4,9 @@ import pprint
 
 
 class PipelineSchema(object):
-	def __init__(self, name, config, logsPath, imageName, scriptUrl=None, cmd=None, cores=1, mem=1, diskSize=200, diskType=None, env=None, inputs=None, outputs=None, tag=None, children=None, metadata=None, preemptible=False):  # config must be an instance of pipelines.utils.PipelinesConfig
+	def __init__(self, name, config, logsPath, imageName, scriptUrl=None, cmd=None, cores=1, mem=1, diskSize=200,
+	             diskType=None, env=None, inputs=None, outputs=None, tag=None, children=None, metadata=None,
+	             preemptible=False):  # config must be an instance of pipelines.utils.PipelinesConfig
 		self.name = name
 
 		if tag is None:
@@ -53,16 +55,18 @@ class PipelineSchema(object):
 		self.addDisk(name, diskType, diskSize, mountPath)
 
 		# add inputs
+		# TODO: input validation
 		if inputs is not None:
-			inputMap = { ':'.join(pair.split(':')[0:-1]): pair.split(':')[-1] for pair in inputs.split(',') }
+			inputMap = {':'.join(pair.split(':')[0:-1]): pair.split(':')[-1] for pair in inputs.split(',')}
 
 			for i, k in enumerate(inputMap.keys()):
 				inputName = "input{N}".format(N=i)
 				self.addInput(inputName, name, inputMap[k], k)
 
 		# add outputs
+		# TODO: input validation
 		if outputs is not None:
-			outputMap = { pair.split(':')[0]: ':'.join(pair.split(':')[1:]) for pair in outputs.split(',') }
+			outputMap = {pair.split(':')[0]: ':'.join(pair.split(':')[1:]) for pair in outputs.split(',')}
 
 			for i, k in enumerate(outputMap.keys()):
 				outputName = "output{N}".format(N=i)
@@ -104,7 +108,7 @@ class PipelineSchema(object):
 
 		# set metadata
 		if metadata is not None:
-			metadataMap = { pair.split('=')[0]: pair.split('=')[1].split(',') for pair in metadata.split(',') }
+			metadataMap = {pair.split('=')[0]: pair.split('=')[1].split(',') for pair in metadata.split(',')}
 			self.addSchemaMetadata(**metadataMap)
 
 		# set children
@@ -114,14 +118,13 @@ class PipelineSchema(object):
 			for c in childList:
 				self.addChild(c)
 
-	
 	def getSchema(self):
 		return self._schema
 
 	def addChild(self, child):
 		self._schema["children"].append(child.name)
 
-	def addInput(self, name, disk, localPath, gcsPath): 
+	def addInput(self, name, disk, localPath, gcsPath):
 		self._schema["request"]["pipelineArgs"]["inputs"][name] = gcsPath
 
 		self._schema["request"]["ephemeralPipeline"]["inputParameters"].append({
@@ -193,5 +196,3 @@ class PipelineSchema(object):
 			return self._metadata[key]
 		else:
 			raise LookupError("Metadata key '{k}' not found".format(k=key))
-
-

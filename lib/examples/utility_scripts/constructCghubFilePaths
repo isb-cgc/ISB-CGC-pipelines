@@ -1,0 +1,18 @@
+#!/usr/bin/env python
+import os
+import requests
+import argparse
+from utils.PipelineUtils import DataUtils
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--analysisId")
+parser.add_argument("--outputPath")
+args = parser.parse_args()
+
+try:
+	print DataUtils.constructObjectPath(args.analysisId, args.outputPath)
+except LookupError:
+	print "ERROR: no files found for analysis ID {a}!".format(a=args.analysisId)
+	exit(-1)
+
+

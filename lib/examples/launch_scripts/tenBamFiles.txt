@@ -1,0 +1,10 @@
+gs://isb-cgc-open/ccle/LUSC/DNA-Seq/C836.Sq-1.1.bam
+gs://isb-cgc-open/ccle/LUSC/RNA-Seq/G28061.LCLC-103H.1.bam
+gs://isb-cgc-open/ccle/DLBC/DNA-Seq/C836.NU-DHL-1.2.bam
+gs://isb-cgc-open/ccle/LUSC/RNA-Seq/G25222.NCI-H2171.1.bam
+gs://isb-cgc-open/ccle/MM/DNA-Seq/C836.KMS-12-BM.1.bam
+gs://isb-cgc-open/ccle/LUSC/RNA-Seq/G28079.LUDLU-1.1.bam
+gs://isb-cgc-open/ccle/LUSC/RNA-Seq/G30580.T3M-10.1.bam
+gs://isb-cgc-open/ccle/SKCM/RNA-Seq/G28025.K029AX.1.bam
+gs://isb-cgc-open/ccle/ESCA/RNA-Seq/G30563.TE-8.1.bam
+gs://isb-cgc-open/ccle/COAD/RNA-Seq/G28089.LS123.1.bam

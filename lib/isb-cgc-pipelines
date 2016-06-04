@@ -160,26 +160,28 @@ def getJobLogs(args, config):
 
 	jobInfo = pipelineDbUtils.getJobInfo(select=["stdout_log", "stderr_log", "gcs_log_path"], where={"job_id": args.jobId})
 
-	if args.stdout:
-		try:
-			stdoutLogFile = subprocess.check_output(["gsutil", "cat", os.path.join(jobInfo[0].gcs_log_path, jobInfo[0].stdout_log)])
-		except subprocess.CalledProcessError as e:
-			print "ERROR: couldn't get the stdout log : {reason}".format(reason=e)
-			exit(-1)
-		print "STDOUT:\n"
-		print stdoutLogFile
-		print "---------\n"
+	with open(os.devnull, 'w') as fnull:
+		if args.stdout:
+			try:
+				stdoutLogFile = subprocess.check_output(["gsutil", "cat", os.path.join(jobInfo[0].gcs_log_path, jobInfo[0].stdout_log)], stderr=fnull)
+			except subprocess.CalledProcessError as e:
+				print "ERROR: couldn't get the stdout log : {reason}".format(reason=e)
+				exit(-1)
 
-	if args.stderr:
-		try:
-			stderrLogFile = subprocess.check_output(["gsutil", "cat", os.path.join(jobInfo[0].gcs_log_path, jobInfo[0].stderr_log)])
-		except subprocess.CalledProcessError as e:
-			print "ERROR: couldn't get the stderr log : {reason}".format(reason=e)
-			exit(-1)
-		
-		print "STDERR:\n"
-		print stderrLogFile
-		print "---------\n"
+			print "STDOUT:\n"
+			print stdoutLogFile
+			print "---------\n"
+
+		if args.stderr:
+			try:
+				stderrLogFile = subprocess.check_output(["gsutil", "-q", "cat", os.path.join(jobInfo[0].gcs_log_path, jobInfo[0].stderr_log)], stderr=fnull)
+			except subprocess.CalledProcessError as e:
+				print "ERROR: couldn't get the stderr log : {reason}".format(reason=e)
+				exit(-1)
+
+			print "STDERR:\n"
+			print stderrLogFile
+			print "---------\n"
 
 	pipelineDbUtils.closeConnection()
 
@@ -247,12 +249,16 @@ def getJobsList(args, unknown, config):
 
 		print header % (fieldPadding(maxJobIdLen, len("JOBID")), fieldPadding(maxPipelineLen, len("PIPELINE")), fieldPadding(maxOperationIdLen, len("OPERATION ID")), fieldPadding(maxTagLen, len("TAG")), fieldPadding(maxStatusLen, len("STATUS")), fieldPadding(maxCreateTimeLen, len("CREATE TIME")))
 		for j in jobs:
+			if j.create_time is not None:
+				ct = j.create_time
+			else:
+				ct = "None"
 			if j.operation_id is not None:
 				op = j.operation_id.split('/')[1]
 			else:
 				op = "None"
 
-			print jobStatusString.format(jobId=j.job_id, pipeline=j.pipeline_name, operationId=op, tag=j.tag, status=j.current_status, createTime=j.create_time, preemptions=j.preemptions) % (fieldPadding(maxJobIdLen, len(str(j.job_id))), fieldPadding(maxPipelineLen, len(j.pipeline_name)), fieldPadding(maxOperationIdLen, len(op)), fieldPadding(maxTagLen, len(j.tag)), fieldPadding(maxStatusLen, len(j.current_status)), fieldPadding(maxCreateTimeLen, len(j.create_time)))
+			print jobStatusString.format(jobId=j.job_id, pipeline=j.pipeline_name, operationId=op, tag=j.tag, status=j.current_status, createTime=ct, preemptions=j.preemptions) % (fieldPadding(maxJobIdLen, len(str(j.job_id))), fieldPadding(maxPipelineLen, len(j.pipeline_name)), fieldPadding(maxOperationIdLen, len(op)), fieldPadding(maxTagLen, len(j.tag)), fieldPadding(maxStatusLen, len(j.current_status)), fieldPadding(maxCreateTimeLen, len(ct)))
 
 	else:
 		print "No jobs found"
@@ -406,7 +412,7 @@ def main(args, unknown):
 
 	elif args.subcommand == "restart":
 		config = PipelinesConfig(PIPELINES_CONFIG_PATH)
-		restartJobs(args, unknown, config) 
+		restartJobs(args, config)
 
 	elif args.subcommand == "clean":
 		config = PipelinesConfig(PIPELINES_CONFIG_PATH)

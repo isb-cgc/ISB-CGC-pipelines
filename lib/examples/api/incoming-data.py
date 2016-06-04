@@ -4,6 +4,8 @@ from pipelines.builder import PipelineBuilder
 from pipelines.schema import PipelineSchema
 from pipelines.utils import PipelinesConfig, DataUtils
 
+import pprint
+
 # Parse Arguments
 parser = argparse.ArgumentParser()
 parser.add_argument("--analysisId", required=True)
@@ -77,6 +79,8 @@ fastqcSchema = PipelineSchema("fastqc", pipelinesConfig, args.fastqcLogs, "b.gcr
                               scriptUrl="gs://isb-cgc-data-02-misc/pipeline-scripts/fastqc.sh",
                               diskSize=DataUtils.calculateDiskSize(analysisId=args.analysisId, roundToNearestGbInterval=100),
                               diskType="PERSISTENT_SSD",
+                              mem=2,
+                              cores=1,
                               inputs=",".join([os.path.join(objectPath, x["filename"]) + ":" + bamFileName for x in files]),
                               outputs="*_fastqc.zip:{fastqcOutput},*_fastqc.html:{fastqcOutput}".format(fastqcOutput=fastqcOutput),
                               env="INPUT_FILENAME={bamFile},OUTPUT_PREFIX={analysisId}".format(bamFile=bamFileName, analysisId=args.analysisId),
@@ -95,6 +99,8 @@ if foundBam:
 		                                     cmd="samtools index {filename}".format(filename=bamFileName),
 		                                     diskSize=DataUtils.calculateDiskSize(analysisId=args.analysisId, roundToNearestGbInterval=100),
 		                                     diskType="PERSISTENT_SSD",
+		                                     mem=2,
+		                                     cores=1,
 		                                     inputs=",".join([os.path.join(objectPath, x["filename"]) + ":" + bamFileName for x in files]),
 		                                     outputs="{filename}.bai:{outputPath}".format(filename=bamFileName, outputPath=objectPath),
 		                                     tag=args.analysisId,
@@ -102,7 +108,7 @@ if foundBam:
 
 		pipelineBuilder.addStep(samtoolsIndexSchema)
 		cghubSchema.addChild(samtoolsIndexSchema)
-		fastqcSchema.addChild(samtoolsIndexSchema)
+		samtoolsIndexSchema.addChild(fastqcSchema)
 
 		setMetaParents.append(samtoolsIndexSchema)
 
