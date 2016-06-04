@@ -80,7 +80,7 @@ class MonitoringHandler(pyinotify.ProcessEvent):
 				self._credentials.refresh(self._http)
 
 			try:
-				operationsInfo = self._pipelineService.operations().list(name="operations", filter=operationsFilter, pageSize=self._config.max_running_jobs).execute() # TODO: implement handling lists longer than 2048
+				operationsInfo = self._pipelineService.operations().list(name="operations", filter=operationsFilter, pageSize=2048).execute()
 
 			except HttpError as e:
 				PipelineSchedulerUtils.writeStdout("WARNING: couldn't get operations list : {reason}".format(reason=e))
