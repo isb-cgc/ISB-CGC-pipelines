@@ -446,8 +446,8 @@ if __name__ == "__main__":
 	parser = argparse.ArgumentParser(description="")
 	subparsers = parser.add_subparsers(dest="subcommand")
 
-	scheduler = subparsers.add_parser("scheduler")
-	scheduler.add_argument("schedulerOperation", choices=["start", "stop"])
+	deploy = subparsers.add_parser("deploy")
+	deploy.add_argument("--name", required=True)
 
 	submit = subparsers.add_parser("submit", conflict_handler="resolve")
 	submit.add_argument("--pipelineName", required=True)
@@ -465,7 +465,7 @@ if __name__ == "__main__":
 	submit.add_argument("--tag", required=False, default=None)
 	submit.add_argument("--preemptible", action="store_true", default=False)
 
-	stop = subparsers.add_parser("stop")
+	stop = subparsers.add_parser("delete")
 	stopGrp = stop.add_mutually_exclusive_group()
 	stopGrp.add_argument("--jobIds")
 	stopGrp.add_argument("--pipeline")
@@ -475,13 +475,10 @@ if __name__ == "__main__":
 	restartGrp.add_argument("--jobIds")
 	restartGrp.add_argument("--preempted", action="store_true")
 
-	clean = subparsers.add_parser("clean")
-	clean.add_argument("pipeline")
-
 	logs = subparsers.add_parser("logs")
 	logs.add_argument("jobId")
 	logs.add_argument("--stderr", action="store_true")
-	logs.add_argument("--stdout", action="store_true", default=True)
+	logs.add_argument("--stdout", action="store_true")
 
 	lst = subparsers.add_parser("list")
 	lst.add_argument("entity", choices=["jobs", "schemas"])

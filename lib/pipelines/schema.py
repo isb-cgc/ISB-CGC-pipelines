@@ -80,6 +80,7 @@ class PipelineSchema(object):
 		self.setMem(mem)
 
 		# prepare environment string
+		# TODO: set some default config variables in the envString (i.e., JOBNAME)
 		if env is not None:
 			envString = " ".join(env.split(',')) + " "
 		else:
@@ -91,15 +92,19 @@ class PipelineSchema(object):
 			script = os.path.basename(scriptUrl)
 			self.addInput("pipelineScript", name, script, scriptUrl)
 			command = (
-				'cd {mnt} && ls && '
+				'cd {mnt} && mkfifo out.log && mkfifo err.log && '
 				'chmod u+x {script} && '
-				'{env}./{script}'
-			).format(mnt=mountPath, script=script, env=envString)
+				'{env}./{script} 2>> err.log 1>> out.log & '
+				'cat out.log | xargs -I outlog -n 1 curl -X \"POST\" {functionsUrl} --data {\"message\": outlog} & '
+				'cat err.log | xargs -I errlog -n 1 curl -X \"POST\" {functionsUrl} --data {\"message\": errlog} &'
+			).format(mnt=mountPath, script=script, env=envString, functionsUrl=config.functionsUrl)  # TODO: put the function urls in to the global config
 		elif cmd is not None:
 			command = (
 				'cd {mnt} && '
-				'{env}{cmd}'
-			).format(mnt=mountPath, env=envString, cmd=cmd)
+				'{env}{cmd} 2>> err.log 1>> out.log & '
+				'cat out.log | xargs -I outlog -n 1 curl -X \"POST\" {functionsUrl} --data {\"message\": outlog} & '
+				'cat err.log | xargs -I errlog -n 1 curl -X \"POST\" {functionsUrl} --data {\"message\": errlog} &'
+			).format(mnt=mountPath, env=envString, cmd=cmd, functionsUrl=config.functionsUrl)  # TODO: put the function urls in to the global config
 
 		self.setCmd(command)
 
