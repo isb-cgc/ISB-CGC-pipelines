@@ -76,7 +76,7 @@ To submit a task, you can use the `submit` subcommand, which takes the following
 | --pipelineName | Yes | A name for this particular pipeline (need not be unique) | None |
 | --tag | No | An arbitrary identifier | Will be automatically generated using Python's uuid module (uuid4) |
 | --logsPath | Yes | Relative path to a directory or bucket in Google Cloud Storage where log files will automatically be generated | None |
-| --diskSize | Yes | The size of the data disk, in GB | None |
+| --diskSize | No | The size of the data disk, in GB; if not provided, no disk will be used | None |
 | --diskType | No | The type of disk to use; choose either "PERSISTENT_HDD" or "PERSISTENT_SSD" | "PERSISTENT_SSD" |
 | --cores | No | The number of cores to request for the task | 1 |
 | --mem | No | The amount of memory to request for the task, in GB | 1 |
