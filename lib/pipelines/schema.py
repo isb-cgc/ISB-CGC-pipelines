@@ -4,13 +4,13 @@ import pprint
 
 
 class PipelineSchema(object):
-	def __init__(self, name, config, logsPath, imageName, scriptUrl=None, cmd=None, cores=1, mem=1, diskSize=200,
+	def __init__(self, name, config, logsPath, imageName, scriptUrl=None, cmd=None, cores=1, mem=1, diskSize=None,
 	             diskType=None, env=None, inputs=None, outputs=None, tag=None, children=None, metadata=None,
 	             preemptible=False):  # config must be an instance of pipelines.utils.PipelinesConfig
 		self.name = name
 
 		if tag is None:
-			tag = uuid.uuid4()
+			tag = str(uuid.uuid4())
 
 		self.tag = tag
 		self._schema = {
@@ -47,12 +47,13 @@ class PipelineSchema(object):
 		}
 		self._metadata = {}
 
-		# add a disk
-		mountPath = "/{pipeline}".format(pipeline=name)
-		if diskType is None:
-			diskType = "PERSISTENT_SSD"
+		# if disk info provided, add a disk
+		if diskSize is not None:
+			mountPath = "/{pipeline}".format(pipeline=name)
+			if diskType is None:
+				diskType = "PERSISTENT_SSD"
 
-		self.addDisk(name, diskType, diskSize, mountPath)
+			self.addDisk(name, diskType, diskSize, mountPath)
 
 		# add inputs
 		# TODO: input validation
