@@ -10,7 +10,7 @@ class PipelineSchema(object):
 		self.name = name
 
 		if tag is None:
-			tag = uuid.uuid4()
+			tag = str(uuid.uuid4())
 
 		self.tag = tag
 		self._schema = {
