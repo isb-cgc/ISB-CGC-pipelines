@@ -2,7 +2,7 @@
 
 import sys
 import argparse
-from utils.PipelineUtils import DataUtils
+from pipelines.utils import DataUtils
 
 parser = argparse.ArgumentParser()
 grp = parser.add_mutually_exclusive_group(required=True)

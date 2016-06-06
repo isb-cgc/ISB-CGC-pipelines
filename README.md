@@ -49,6 +49,10 @@ The most basic way to use the tool is to use the built-in command line utility, 
 
 ### Configuration
 
+First, update PYTHONPATH:
+
+`export PYTHONPATH=$PYTHONPATH:/usr/local/ISB-CGC-pipelines/lib`
+
 To configure the tool, run the following command and follow the prompts:
 
 `isb-cgc-pipelines config set all`

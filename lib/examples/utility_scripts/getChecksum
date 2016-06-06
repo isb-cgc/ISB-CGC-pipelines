@@ -2,7 +2,7 @@
 
 import argparse
 import requests
-from utils.PipelineUtils import DataUtils
+from pipelines.utils import DataUtils
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--analysisId", required=True)
