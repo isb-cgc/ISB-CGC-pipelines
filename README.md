@@ -93,7 +93,7 @@ Here is an example command that will submit a "fastqc" task, which will use an o
 ```
 isb-cgc-pipelines submit --pipelineName fastqc \
                 --inputs gs://isb-cgc-open/ccle/BRCA/DNA-Seq/C836.MDA-MB-436.1.bam:C836.MDA-MB-436.1.bam,gs://isb-cgc-open/ccle/BRCA/DNA-Seq/C836.MDA-MB-436.1.bam.bai:C836.MDA-MB-436.1.bam.bai \
-                --outputs gs://<YOUR_GCS_OUTPUT_PATH>:*_fastqc.zip,gs://<YOUR_GCS_OUTPUT_PATH>:*_fastqc.html \
+                --outputs *_fastqc.zip:gs://<YOUR_GCS_OUTPUT_PATH>,*_fastqc.html:gs://<YOUR_GCS_OUTPUT_PATH> \
                 --cmd "fastqc C836.MDA-MB-436.1.bam" \
                 --imageName b.gcr.io/isb-cgc-public-docker-images/fastqc \
                 --cores 1 --mem 2 \
