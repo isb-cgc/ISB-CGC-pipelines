@@ -59,11 +59,15 @@ To configure the tool, run the following command and follow the prompts:
 
 ### Starting and Stopping the Scheduler
 
-To start the scheduler:
+In order to start up the scheduler, you need to belong to the `supervisor` Linux group.  Run the following command and then log out and back in again for the update to take effect:
+
+`sudo usermod -a -G supervisor $USER`
+
+Then start the scheduler:
 
 `isb-cgc-pipelines scheduler start`
 
-To stop the scheduler:
+To stop the scheduler later on:
 
 `isb-cgc-pipelines scheduler stop`
 
