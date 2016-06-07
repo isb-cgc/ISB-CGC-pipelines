@@ -2,14 +2,69 @@
 import os
 import shutil
 import argparse
+import httplib2
 import subprocess
 from ConfigParser import SafeConfigParser
 from pipelines.builder import PipelineBuilder
 from pipelines.schema import PipelineSchema
-from pipelines.utils import PipelinesConfig, PipelineDbUtils
+from pipelines.utils import PipelinesConfig, PipelineDbUtils, PipelineServiceUtils
+
+from googleapiclient import discovery
+from googleapiclient.errors import HttpError
+from oauth2client.client import GoogleCredentials
 
 MODULE_PATH = "/usr/local/ISB-CGC-pipelines/lib"  # TODO: move path to configuration file
 PIPELINES_CONFIG_PATH = os.path.join(os.environ["HOME"], ".isb-cgc-pipelines", "config")
+
+def deployService(args, config):
+	try:
+		subprocess.check_call(["gsutil", "ls", args.bucket])
+	except subprocess.CalledProcessError as e:
+		print "ERROR: there was a problem deploying cloud functions to bucket {bucket} : {reason}".format(bucket=args.bucket, reason=e)
+		exit(-1)
+
+	# API service objects
+	credentials = GoogleCredentials.get_application_default()
+	http = credentials.authorize(httplib2.Http())
+	if credentials.access_token_expired:
+		credentials.refresh(http)
+
+	gke = discovery.build('container', 'v1', http=http)
+	compute = discovery.build('compute', 'v1', http=http)
+	functions = discovery.build('functions', '', http=http)
+	pubsub = discovery.build('pubsub', 'v1', http=http)
+	logging = discovery.build('logging', 'v2', http=http)
+
+	# bootstrap the k8s cluster for hosting the service
+	PipelineServiceUtils.bootstrapServiceCluster(compute, gke, http, config)
+
+	# bootstrap Cloud Functions
+	PipelineServiceUtils.bootstrapFunctions(functions, pubsub, logging, http, config)
+
+
+def buildAndRunPipeline(args, config):
+	try:
+		os.makedirs(config.pipelines_home)
+	except OSError as e:
+		pass
+
+	if args.scriptUrl:
+		pipelineSpec = PipelineSchema(args.pipelineName, config, args.logsPath, args.imageName,
+		                              scriptUrl=args.scriptUrl, cores=args.cores,
+		                              mem=args.mem, diskSize=args.diskSize, diskType=args.diskType, env=args.env,
+		                              inputs=args.inputs, outputs=args.outputs, tag=args.tag,
+		                              preemptible=args.preemptible)
+	elif args.cmd:
+		pipelineSpec = PipelineSchema(args.pipelineName, config, args.logsPath, args.imageName, cmd=args.cmd,
+		                              cores=args.cores,
+		                              mem=args.mem, diskSize=args.diskSize, diskType=args.diskType, env=args.env,
+		                              inputs=args.inputs, outputs=args.outputs, tag=args.tag,
+		                              preemptible=args.preemptible)
+
+	# TODO: translate code below into a server request; move the code below to the server
+	pipelineBuilder = PipelineBuilder(config)
+	pipelineBuilder.addStep(pipelineSpec)
+	pipelineBuilder.run()
 
 
 def startScheduler(args, unknown, config):
@@ -383,28 +438,13 @@ def configureTool(args, unknown):
 		
 
 def main(args, unknown):
+	if args.subcommand == "deploy":
+		config = PipelinesConfig(PIPELINES_CONFIG_PATH)
+		deployService(args, config)
+
 	if args.subcommand == "submit":
 		config = PipelinesConfig(PIPELINES_CONFIG_PATH)
-
-		try:
-			os.makedirs(config.pipelines_home)
-		except OSError as e:
-			pass
-
-		if args.scriptUrl:
-			pipelineSpec = PipelineSchema(args.pipelineName, config, args.logsPath, args.imageName, scriptUrl=args.scriptUrl, cores=args.cores,
-			                              mem=args.mem, diskSize=args.diskSize, diskType=args.diskType, env=args.env,
-			                              inputs=args.inputs, outputs=args.outputs, tag=args.tag,
-			                              preemptible=args.preemptible)
-		elif args.cmd:
-			pipelineSpec = PipelineSchema(args.pipelineName, config, args.logsPath, args.imageName, cmd=args.cmd, cores=args.cores,
-			                              mem=args.mem, diskSize=args.diskSize, diskType=args.diskType, env=args.env,
-			                              inputs=args.inputs, outputs=args.outputs, tag=args.tag,
-			                              preemptible=args.preemptible)
-
-		pipelineBuilder = PipelineBuilder(config)
-		pipelineBuilder.addStep(pipelineSpec)
-		pipelineBuilder.run()
+		buildAndRunPipeline(args, config)
 
 	elif args.subcommand == "stop":
 		config = PipelinesConfig(PIPELINES_CONFIG_PATH)
@@ -448,6 +488,7 @@ if __name__ == "__main__":
 
 	deploy = subparsers.add_parser("deploy")
 	deploy.add_argument("--name", required=True)
+	deploy.add_argument("--bucket", required=True)
 
 	submit = subparsers.add_parser("submit", conflict_handler="resolve")
 	submit.add_argument("--pipelineName", required=True)

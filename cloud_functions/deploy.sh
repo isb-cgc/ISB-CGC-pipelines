@@ -10,7 +10,7 @@
 #
 
 # Create a bucket for the cloud functions (eventually put functions in github)
-
+gsutil mb ...
 
 # Ensure that the cloud function code is in the specified bucket
 

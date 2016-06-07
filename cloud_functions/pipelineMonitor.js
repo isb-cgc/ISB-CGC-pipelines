@@ -1,6 +1,7 @@
 'use strict';
 
 var google = require('googleapis');
+var request = require('request');
 
 module.exports = {
     schedulePipelineJob: function(context, data) {

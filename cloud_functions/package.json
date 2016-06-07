@@ -1,0 +1,8 @@
+{
+  "name": "isb-cgc-pipelines functions",
+  "description": "Utilities for collecting and displaying information about Genomics Pipelines API jobs",
+  "dependencies": {
+    "googleapis": "7.1.0",
+    "request": "2.72.1"
+  }
+}

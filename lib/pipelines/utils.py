@@ -1,14 +1,33 @@
 import os
 import sys
 import math
+import string
 import sqlite3
 import requests
 import pyinotify
 import subprocess
 from time import time, sleep
 from datetime import datetime
+from random import SystemRandom
 from ConfigParser import SafeConfigParser
 
+from googleapiclient.errors import HttpError
+
+# Kubernetes API Access
+API_ROOT = "http://localhost:8080"
+NAMESPACE_URI = "/api/v1/namespaces/"
+PODS_URI = "/api/v1/namespaces/{namespace}/pods/"
+SERVICES_URI = "/api/v1/namespaces/{namespace}/services/"
+REPLICATION_CONTROLLERS_URI = "/api/v1/namespaces/{namespace}/replicationcontrollers/"
+PERSISTENT_VOLUMES_URI = "/api/v1/persistentvolumes/"
+PERSISTENT_VOLUME_CLAIMS_URI = "/api/v1/namespaces/{namespace}/persistentvolumeclaims/"
+SECRETS_URI = "/api/v1/namespaces/{namespace}/secrets/"
+
+SESSION = requests.Session()
+API_HEADERS = {
+	"Content-type": "application/json",
+	"Authorization": "Bearer {access_token}"
+}
 
 class PipelinesConfig(object):
 	def __init__(self, path=None):
@@ -176,6 +195,374 @@ class PipelineDbUtils(object):
 		if len(self._pipelinesDb.execute('SELECT name FROM sqlite_master WHERE type="table" AND name="job_dependencies"').fetchall()) == 0:
 			self._pipelinesDb.execute("CREATE TABLE job_dependencies (row_id INTEGER PRIMARY KEY AUTOINCREMENT, parent_id INTEGER, child_id INTEGER)")
 			self._sqliteConn.commit()
+
+
+class PipelineServiceUtils:
+
+	# TODO: eventually refactor this class
+	@staticmethod
+	def bootstrapCluster(compute, gke, http, config):
+		# create a cluster to run the workflow on if it doesn't exist already
+
+		def createClusterAdminPassword():
+			return ''.join(
+				SystemRandom().choice(string.ascii_uppercase + string.ascii_lowercase + string.digits) for _ in
+				range(16))
+
+		def clusterExists(gke, http, config):
+			clusterExists = False
+			clusterEndpoint = None
+
+			try:
+				response = gke.projects().zones().clusters().get(projectId=config.project_id, zone=config.service_zone,
+				                                                 clusterId=config.service_name).execute(
+					http=http)
+			except HttpError:
+				pass
+			else:
+				# make sure the existing cluster meets the requirements in the global configuration
+				try:
+					if str(response["name"]) == config.service_name and str(
+							response["initialNodeCount"]) == config.service_node_count and str(
+						response["nodeConfig"]["diskSizeGb"]) == config.service_disk_size and str(
+						response["nodeConfig"]["machineType"]) == config.service_machine_type:
+						clusterExists = True
+						clusterEndpoint = response["endpoint"]
+
+				except KeyError:
+					pass
+
+			return clusterExists, clusterEndpoint
+
+		cluster = {
+			"cluster": {
+				"name": "{cluster_name}".format(cluster_name=config.service_name),
+				"zone": "{zone}".format(zone=config.service_zone),
+				"initialNodeCount": config.node_count,
+				"network": "{network}".format(network=config.service_network),
+				"nodeConfig": {
+					"machineType": "{machine_type}".format(machine_type=config.service_machine_type),
+					"diskSizeGb": config.service_boot_disk_size,
+					"oauthScopes": [
+						"https://www.googleapis.com/auth/pubsub",
+						"https://www.googleapis.com/auth/devstorage.read_write",
+						"https://www.googleapis.com/auth/logging.write"
+					]
+				},
+				"masterAuth": {
+					"username": "admin",
+					"password": "{password}".format(password=createClusterAdminPassword()),
+				}
+			}
+		}
+
+		exists, endpoint = clusterExists(gke, http, config)
+		if not exists:
+			print "Creating cluster {cluster} ... ".format(cluster=config.service_name)
+
+			createCluster = gke.projects().zones().clusters().create(projectId=config.project_id, zone=config.service_zone,
+			                                                          body=cluster).execute(http=http)
+
+			# wait for the operation to complete
+			while True:
+				response = gke.projects().zones().operations().get(projectId=config.project_id, zone=config.service_zone,
+				                                                   operationId=createCluster["name"]).execute(http=http)
+
+				if response['status'] == 'DONE':
+					break
+				else:
+					sleep(1)
+
+		# configure cluster access (may want to perform checks before doing this)
+		print "Configuring access to cluster {cluster_name} ...".format(cluster_name=config.service_name)
+
+		# configure ssh keys
+		try:
+			subprocess.check_call(
+				["bash", "-c", "stat ~/.ssh/google_compute_engine && stat ~/.ssh/google_compute_engine.pub"])
+		except subprocess.CalledProcessError as e:
+			try:
+				subprocess.check_call(["gcloud", "compute", "config-ssh"])
+			except subprocess.CalledProcessError as e:
+				print "Couldn't generate SSH keys for the workstation: {e}".format(e=e)
+				exit(-1)
+
+		try:
+			subprocess.check_call(["gcloud", "config", "set", "compute/zone", ",".join(config.zones)])
+		except subprocess.CalledProcessError as e:
+			print "Couldn't set the compute zone: {reason}".format(reason=e)
+			exit(-1)
+		try:
+			subprocess.check_call(["kubectl", "config", "set", "cluster", config.service_name])
+		except subprocess.CalledProcessError as e:
+			print "Couldn't set cluster in configuration: {reason}".format(reason=e)
+			exit(-1)  # raise an exception
+
+		try:
+			subprocess.check_call(["gcloud", "container", "clusters", "get-credentials", config.service_name])
+		except subprocess.CalledProcessError as e:
+			print "Couldn't get cluster credentials: {reason}".format(reason=e)
+			exit(-1)  # raise an exception
+
+		# get the name of a host to use for formatting the data disk
+		try:
+			instanceGroupName = subprocess.check_output(["gcloud", "compute", "instance-groups", "list", "--regexp", "^gke-{service}-.*$".format(service=config.service_name)]).split('\n')[1].split(' ')[0]
+			instance_list = subprocess.check_output(["gcloud", "compute", "instance-groups", "list-instances", instanceGroupName]).split('\n')[1:-1]
+			formattingInstance = instance_list[0]
+
+		except subprocess.CalledProcessError as e:
+			print "Couldn't get cluster hostnames: {reason}".format(reason=e)
+			exit(-1)  # raise an exception
+
+		# run kubectl in proxy mode in a background process
+		try:
+			subprocess.Popen(["kubectl", "proxy", "--port", "8080"])
+		except ValueError as e:
+			exit(-1)  # raise an exception
+
+		# make sure the proxy is running -- something is going wrong here that I can't figure out.
+		timeout = 180
+		while True:
+			try:
+				response = SESSION.get(API_ROOT + NAMESPACE_URI)
+			except:
+				continue
+
+			if response.status_code == 200:
+				break
+
+			if timeout <= 0:
+				print "Couldn't access proxy (timeout reached): {status}".format(status=response.content)
+				exit(-1)
+			else:
+				sleep(1)
+				timeout -= 1
+
+		# create a namespace for the service
+		namespace = {
+			"apiVersion": "v1",
+			"kind": "Namespace",
+			"metadata": {
+				"name": config.service_name
+			}
+		}
+
+		fullUrl = API_ROOT + NAMESPACE_URI
+		response = SESSION.post(fullUrl, headers=API_HEADERS, json=namespace)
+
+		# if the response isn't what's expected, raise an exception
+		if response.status_code != 201:
+			if response.status_code == 409:  # already exists
+				pass
+			else:
+				print "Namespace creation failed: {reason}".format(reason=response.status_code)
+				exit(-1)  # probably should raise an exception
+
+		# set the namespace for the current context if it doesn't exist already
+		kubectlConfig = subprocess.Popen(["kubectl", "config", "view"], stdout=subprocess.PIPE)
+		grep = subprocess.Popen(["grep", "current-context"], stdout=subprocess.PIPE, stdin=kubectlConfig.stdout,
+		                        stderr=subprocess.STDOUT)
+
+		kubectlContextString = grep.communicate()
+		kubeContext = kubectlContextString[0].split(' ')[1].strip()
+		try:
+			subprocess.check_call(["kubectl", "config", "set", "contexts.{context}.namespace".format(context=kubeContext), config.service_name])
+		except subprocess.CalledProcessError as e:
+			print"Couldn't set cluster context: {reason}".format(reason=e)
+			exit(-1)  # raise an exception
+
+		# Create and format a data disk for the service containers
+
+		disk = {
+			"name": "{service}-data".format(service=config.service_name),
+			"zone": "https://www.googleapis.com/compute/v1/projects/{project}/zones/{zone}".format(project=config.project_id, zone=config.service_zone),
+			"type": "https://www.googleapis.com/compute/v1/projects/{project}/zones/{zone}/diskTypes/pd-ssd".format(project=config.project_id, zone=config.service_zone),
+			"sizeGb": config.service_disk_size
+		}
+
+		# Submit the disk request
+		diskResponse = compute.disks().insert(project=config.project_id, zone=config.service_zone, body=disk).execute()
+
+		# Wait for the disks to be created
+		while True:
+			try:
+				result = compute.zoneOperations().get(project=config.project_id, zone=config.service_zone,
+				                                      operation=diskResponse['name']).execute()
+			except HttpError:
+				break
+			else:
+				if result['status'] == 'DONE':
+					break
+
+		# attach the disk to an instance for formatting
+		attachRequest = {
+			"kind": "compute#attachedDisk",
+			"index": 1,
+			"type": "PERSISTENT",
+			"mode": "READ_WRITE",
+			"source": "https://www.googleapis.com/compute/v1/projects/{project}/zones/{zone}/disks/{disk_name}".format(
+				project=config.project_id, zone=config.service_zone, disk_name=disk["name"]),
+			"deviceName": disk["name"],
+			"boot": False,
+			"interface": "SCSI",
+			"autoDelete": False
+		}
+
+		success = False
+		attachResponse = compute.instances().attachDisk(project=config.project_id, zone=config.service_zone, instance=formattingInstance,
+		                                                 body=attachRequest).execute()
+
+		# Wait for the attach operation to complete
+		while True:
+			try:
+				result = compute.zoneOperations().get(project=config.project_id, zone=config.service_zone,
+				                                      operation=attachResponse['name']).execute()
+			except HttpError:
+				break
+			else:
+				if result['status'] == 'DONE':
+					success = True
+					break
+
+			if success:
+				break
+
+			else:
+				print "Couldn't attach disk for formatting: {result}".format(result=result)
+				exit(-1)
+
+		# generate ssh keys on the workstation
+		try:
+			subprocess.check_call(
+				["bash", "-c", "stat ~/.ssh/google_compute_engine && stat ~/.ssh/google_compute_engine.pub"])
+		except subprocess.CalledProcessError as e:
+			try:
+				subprocess.check_call(["gcloud", "compute", "config-ssh"])
+			except subprocess.CalledProcessError as e:
+				print "Couldn't generate SSH keys for the workstation: {e}".format(e=e)
+				exit(-1)
+
+		command = (
+			"sudo mkdir -p /{service}-data && "
+			"sudo mount -o discard,defaults /dev/disk/by-id/google-{service}-data /{service}-data && "
+			"sudo mkfs.ext4 -F /dev/disk/by-id/google-{service}-data && "
+			"sudo umount /dev/disk/by-id/google-{service}-data"
+		).format(service=config.service_name)
+		try:
+			subprocess.check_call(["gcloud", "compute", "ssh", formattingInstance, "--command", command])
+		except subprocess.CalledProcessError as e:
+			print "Couldn't format the disk: {e}".format(e=e)
+			exit(-1)
+
+		detachResponse = compute.instances().detachDisk(project=config.project_id, zone=config.service_zone, instance=formattingInstance,
+		                                                 deviceName=config.service_name).execute()
+
+		# Wait for the detach operation to complete
+		while True:
+			try:
+				result = compute.zoneOperations().get(project=config.project_id, zone=config.service_zone,
+				                                      operation=detachResponse['name']).execute()
+			except HttpError:
+				break
+			else:
+				if result['status'] == 'DONE':
+					break
+
+		# create the RCs and Services
+		pipelineVolume = {
+
+		}
+
+		pipelineVolumeClaim = {
+
+		}
+
+		mysqlReaderRc = {
+
+		}
+
+		mysqlReaderService = {
+
+		}
+
+		mysqlWriterRc = {
+
+		}
+
+		mysqlWriterService = {
+
+		}
+
+		pipelineRc = {
+			"apiVersion": "v1",
+			"kind": "ReplicationController",
+			"metadata": {
+				"name": "pipeline-server"
+			},
+			"spec": {
+				"replicas": config.service_container_replicas,
+				"selector": {
+					"role": "pipeline-server"
+				},
+				"template": {
+					"metadata": {
+						"labels": {
+							"role": "pipeline-server"
+						}
+					},
+					"spec": {
+						"containers": [
+							{
+								"name": "pipeline-server",
+								"image": "b.gcr.io/isb-cgc-pipelines-public-docker-images/isb-cgc-pipelines:latest",
+								"ports": [
+									{
+										"name": "pipelines",
+										"containerPort": 80
+									}
+								],
+								"securityContext": {
+									"privileged": True
+								}
+							}
+						]
+					}
+				}
+			}
+
+		}
+
+		pipelineService = {
+			"kind": "Service",
+			"apiVersion": "v1",
+			"metadata": {
+				"name": "pipeline-server"
+			},
+			"spec": {
+				"ports": [
+					{
+						"port": 80
+					}
+				],
+				"selector": {
+			    		"role": "pipeline-server"
+				}
+			}
+		}
+
+		print "Cluster bootstrap was successful!"
+
+	@staticmethod
+	def bootstrapFunctions(functions, pubsub, logging, http, config):
+		##
+		## create the following pubsub topics (according to configuration values):
+		## pipeline-server-logs (not required), pipeline-job-stdout-logs (not required), pipeline-job-stderr-logs (not required),
+		## pipeline-vm-insert (required), pipeline-vm-preempted (required), pipeline-vm-delete (required)
+		##
+		## deploy functions corresponding to the created pubsub topics
+		##
+		## create log sinks for pipeline vm logs
+		pass
 
 class DataUtils(object):
 	@staticmethod
