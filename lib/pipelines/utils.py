@@ -1,5 +1,6 @@
 import os
 import sys
+import uuid
 import math
 import string
 import sqlite3
@@ -23,59 +24,152 @@ PERSISTENT_VOLUMES_URI = "/api/v1/persistentvolumes/"
 PERSISTENT_VOLUME_CLAIMS_URI = "/api/v1/namespaces/{namespace}/persistentvolumeclaims/"
 SECRETS_URI = "/api/v1/namespaces/{namespace}/secrets/"
 
-SESSION = requests.Session()
+K8S_SESSION = requests.Session()
 API_HEADERS = {
 	"Content-type": "application/json",
 	"Authorization": "Bearer {access_token}"
 }
 
-class PipelinesConfig(object):
+class PipelinesConfig(SafeConfigParser):
 	def __init__(self, path=None):
+		super(PipelinesConfig, self).__init__()
+
 		if path is not None:
 			self.path = path
 		else:
 			self.path = os.path.join(os.environ["HOME"], ".isb-cgc-pipelines", "config")
 
-		config = SafeConfigParser()
-		requiredParams = {
-			"gcp": ["project_id", "zones", "scopes", "service_account_email"],
-			"pipelines": ["pipelines_home", "max_running_jobs", "autorestart_preempted", "polling_interval"]
+		self._configParams = {
+			"projectId": {
+				"section": "gcp",
+				"required": True,
+				"default": None,
+				"message": "Enter your GCP project ID: "
+			},
+			"zones": {
+				"section": "gcp",
+				"required": True,
+				"default": "us-central1-a,us-central1-b,us-central1-c,us-central1-f,us-east1-b,us-east1-c,us-east1-d",
+				"message": "Enter a comma-delimited list of GCE zones (leave blank to use the default list of all US zones): "
+			},
+			"scopes": {
+				"section": "gcp",
+				"required": True,
+				"default": "https://www.googleapis.com/auth/pubsub,https://www.googleapis.com/auth/compute,https://www.googleapis.com/auth/devstorage.full_control",
+				"message": "Enter a comma-delimited list of GCP scopes (leave blank to use the default list of scopes): "
+			},
+			"service_account_email": {
+				"section": "gcp",
+				"required": True,
+				"default": "default",
+				"message": "Enter a valid service account email (leave blank to use the default service account): "
+			},
+			"pipelines_home": {  # TODO: get rid of this parameter (no longer need it)
+				"section": "pipelines",
+				"required": True,
+				"default": os.path.join(os.environ["HOME"], ".isb-cgc-pipelines/pipelines"),
+				"message": "Enter a path for the ISB-CGC Pipelines job directory (leave blank to use ~/.isb-cgc-pipelines/pipelines by default): "
+			},
+			"max_running_jobs": {
+				"section": "pipelines",
+				"required": True,
+				"default": 200,
+				"message": "Enter the maximum number of running jobs for any given time (leave blank to use default 2000): "
+			},
+			"autorestart_preempted": {
+				"section": "pipelines",
+				"required": True,
+				"default": False,
+				"message": "Would you like to automatically restart preempted jobs? (Only relevant when submitting jobs with the '--preemptible' flag; default is No) Y/N : "
+			},
+			"service_name": {
+				"section": "service",
+				"required": True,
+				"default": None,
+				"message": "Enter a name for the service deployment: "
+			},
+			"service_zone": {
+				"section": "service",
+				"required": True,
+				"default": "us-central1-a",
+				"message": "Enter a zone for the service deployment (leave blank to use default us-central1-a): "
+			},
+			"service_boot_disk_size": {
+				"section": "service",
+				"required": True,
+				"default": 100,
+				"message": "Enter the boot disk size for the service cluster nodes, in GB (leave blank to use default 100): "
+			},
+			"service_network": {
+				"section": "service",
+				"required": True,
+				"default": "default",
+				"message": "Enter the network to use for the service deployment (leave blank to use the 'default' network): "
+			},
+			"service_endpoint": {
+				"section": "service",
+				"required": False,
+				"default": None,
+				"message": None  # this should only be set once the service has been deployed
+			},
+			"service_node_count": {
+				"section": "service",
+				"required": True,
+				"default": 1,
+				"message": "Enter the number of nodes to use for the service cluster (leave blank to use the default of one node): "
+			},
+			"service_cores": {
+				"section": "service",
+				"required": False,
+				"default": "4",
+				"message": "Enter the number of cores per instance to use for the service cluster (leave blank to use the default 1): "
+			},
+			"service_mem": {
+				"section": "service",
+				"required": False,
+				"default": "2",
+				"message": "Enter the amount of RAM per instance (in GB) to use for the service cluster (leave blank to use the default 2): "
+			}
 		}
 
-		innerDict = {}
+		for option, attrs in self._configParams.iteritems():
+			if not self.has_section(attrs["section"]):
+				self.add_section(attrs["section"])
+
+			if attrs["required"]:
+				val = raw_input(attrs["message"])
+				if len(val) == 0:
+					self.update(attrs["section"], option, attrs["default"])
+				else:
+					self.update(attrs["section"], option, val)
+
+	def update(self, section, option, value):
+		self.set(section, option, value)
+
+		with open(self.path, 'w') as f:
+			self.write(f)
+
+		self.__dict__.update(self._verifyConfig())
+
+	def _verifyConfig(self):
 		try:
-			config.read(self.path)
+			self.read(self.path)
 		except IOError as e:
 			print "Couldn't open ~/.isb-cgc-pipelines/config : {reason}".format(reason=e)
 			exit(-1)
 		else:
-			for s, o in requiredParams.iteritems():
-				if not config.has_section(s):
-					print "ERROR: missing required section {s} in the configuration!\nRUN `isb-cgc-pipelines config` to correct the configuration".format(s=s)
+			d = {}
+			for name, attrs in self._configParams.iteritems():
+				if not self.has_section(attrs["section"]):
+					print "ERROR: missing required section {s} in the configuration!\nRUN `isb-cgc-pipelines config` to correct the configuration".format(s=attrs["section"])
 					exit(-1)
 
-				for option in o:
-					if not config.has_option(s, option):
-						print "ERROR: missing required option {o} in section {s}!\nRun `isb-cgc-pipelines config` to correct the configuration".format(s=s, o=option)
-						exit(-1)
-					innerDict[option] = config.get(s, option)
-		
-		self.__dict__.update(innerDict)
+				if not self.has_option(attrs["section"], name):
+					print "ERROR: missing required option {o} in section {s}!\nRun `isb-cgc-pipelines config` to correct the configuration".format(s=attrs["section"], o=name)
+					exit(-1)
+				d[name] = self.get(attrs["section"], name)
 
-	def update(self, valuesDict):
-		self.__dict__.update(valuesDict)
-		
-	def refresh(self):
-		self.__init__(self.path)
-
-
-class PipelinesConfigUpdateHandler(pyinotify.ProcessEvent):
-	def my_init(self, config=None): # config -> PipelinesConfig
-		self._config = config
-	
-	def process_IN_CLOSE_WRITE(self, event):
-		PipelineSchedulerUtils.writeStdout("Refreshing configuration ...")
-		self._config.refresh()
+			return d
 
 
 class PipelineSchedulerUtils(object):		
@@ -200,11 +294,13 @@ class PipelineDbUtils(object):
 class PipelineServiceUtils:
 
 	# TODO: eventually refactor this class
+	# Realistically, the methods in this class ought to be idempotent -- may consider using a configuration management tool instead
+
 	@staticmethod
 	def bootstrapCluster(compute, gke, http, config):
 		# create a cluster to run the workflow on if it doesn't exist already
 
-		def createClusterAdminPassword():
+		def createPassword():
 			return ''.join(
 				SystemRandom().choice(string.ascii_uppercase + string.ascii_lowercase + string.digits) for _ in
 				range(16))
@@ -214,9 +310,7 @@ class PipelineServiceUtils:
 			clusterEndpoint = None
 
 			try:
-				response = gke.projects().zones().clusters().get(projectId=config.project_id, zone=config.service_zone,
-				                                                 clusterId=config.service_name).execute(
-					http=http)
+				response = gke.projects().zones().clusters().get(projectId=config.project_id, zone=config.service_zone, clusterId=config.service_name).execute(http=http)
 			except HttpError:
 				pass
 			else:
@@ -241,7 +335,7 @@ class PipelineServiceUtils:
 				"initialNodeCount": config.node_count,
 				"network": "{network}".format(network=config.service_network),
 				"nodeConfig": {
-					"machineType": "{machine_type}".format(machine_type=config.service_machine_type),
+					"machineType": "custom-{cores}-{mib}".format(cores=config.service_cores, mib=str(int(config.service_mem)*1024)),
 					"diskSizeGb": config.service_boot_disk_size,
 					"oauthScopes": [
 						"https://www.googleapis.com/auth/pubsub",
@@ -251,23 +345,21 @@ class PipelineServiceUtils:
 				},
 				"masterAuth": {
 					"username": "admin",
-					"password": "{password}".format(password=createClusterAdminPassword()),
+					"password": "{password}".format(password=createPassword()),
 				}
 			}
 		}
 
-		exists, endpoint = clusterExists(gke, http, config)
+		exists, clusterEndpoint = clusterExists(gke, http, config)
 		if not exists:
 			print "Creating cluster {cluster} ... ".format(cluster=config.service_name)
 
-			createCluster = gke.projects().zones().clusters().create(projectId=config.project_id, zone=config.service_zone,
-			                                                          body=cluster).execute(http=http)
+			createCluster = gke.projects().zones().clusters().create(projectId=config.project_id, zone=config.service_zone, body=cluster).execute(http=http)
+			clusterEndpoint = createCluster["cluster"]["endpoint"]
 
 			# wait for the operation to complete
 			while True:
-				response = gke.projects().zones().operations().get(projectId=config.project_id, zone=config.service_zone,
-				                                                   operationId=createCluster["name"]).execute(http=http)
-
+				response = gke.projects().zones().operations().get(projectId=config.project_id, zone=config.service_zone, operationId=createCluster["name"]).execute(http=http)
 				if response['status'] == 'DONE':
 					break
 				else:
@@ -304,6 +396,9 @@ class PipelineServiceUtils:
 			print "Couldn't get cluster credentials: {reason}".format(reason=e)
 			exit(-1)  # raise an exception
 
+		# set the cluster endpoint in the configuration
+		config.update("service", "service_cluster_endpoint", clusterEndpoint)
+
 		# get the name of a host to use for formatting the data disk
 		try:
 			instanceGroupName = subprocess.check_output(["gcloud", "compute", "instance-groups", "list", "--regexp", "^gke-{service}-.*$".format(service=config.service_name)]).split('\n')[1].split(' ')[0]
@@ -324,7 +419,7 @@ class PipelineServiceUtils:
 		timeout = 180
 		while True:
 			try:
-				response = SESSION.get(API_ROOT + NAMESPACE_URI)
+				response = K8S_SESSION.get(API_ROOT + NAMESPACE_URI)
 			except:
 				continue
 
@@ -348,7 +443,7 @@ class PipelineServiceUtils:
 		}
 
 		fullUrl = API_ROOT + NAMESPACE_URI
-		response = SESSION.post(fullUrl, headers=API_HEADERS, json=namespace)
+		response = K8S_SESSION.post(fullUrl, headers=API_HEADERS, json=namespace)
 
 		# if the response isn't what's expected, raise an exception
 		if response.status_code != 201:
@@ -360,8 +455,7 @@ class PipelineServiceUtils:
 
 		# set the namespace for the current context if it doesn't exist already
 		kubectlConfig = subprocess.Popen(["kubectl", "config", "view"], stdout=subprocess.PIPE)
-		grep = subprocess.Popen(["grep", "current-context"], stdout=subprocess.PIPE, stdin=kubectlConfig.stdout,
-		                        stderr=subprocess.STDOUT)
+		grep = subprocess.Popen(["grep", "current-context"], stdout=subprocess.PIPE, stdin=kubectlConfig.stdout, stderr=subprocess.STDOUT)
 
 		kubectlContextString = grep.communicate()
 		kubeContext = kubectlContextString[0].split(' ')[1].strip()
@@ -386,8 +480,7 @@ class PipelineServiceUtils:
 		# Wait for the disks to be created
 		while True:
 			try:
-				result = compute.zoneOperations().get(project=config.project_id, zone=config.service_zone,
-				                                      operation=diskResponse['name']).execute()
+				result = compute.zoneOperations().get(project=config.project_id, zone=config.service_zone, operation=diskResponse['name']).execute()
 			except HttpError:
 				break
 			else:
@@ -409,14 +502,12 @@ class PipelineServiceUtils:
 		}
 
 		success = False
-		attachResponse = compute.instances().attachDisk(project=config.project_id, zone=config.service_zone, instance=formattingInstance,
-		                                                 body=attachRequest).execute()
+		attachResponse = compute.instances().attachDisk(project=config.project_id, zone=config.service_zone, instance=formattingInstance, body=attachRequest).execute()
 
 		# Wait for the attach operation to complete
 		while True:
 			try:
-				result = compute.zoneOperations().get(project=config.project_id, zone=config.service_zone,
-				                                      operation=attachResponse['name']).execute()
+				result = compute.zoneOperations().get(project=config.project_id, zone=config.service_zone, operation=attachResponse['name']).execute()
 			except HttpError:
 				break
 			else:
@@ -448,20 +539,19 @@ class PipelineServiceUtils:
 			"sudo mkfs.ext4 -F /dev/disk/by-id/google-{service}-data && "
 			"sudo umount /dev/disk/by-id/google-{service}-data"
 		).format(service=config.service_name)
+
 		try:
 			subprocess.check_call(["gcloud", "compute", "ssh", formattingInstance, "--command", command])
 		except subprocess.CalledProcessError as e:
 			print "Couldn't format the disk: {e}".format(e=e)
 			exit(-1)
 
-		detachResponse = compute.instances().detachDisk(project=config.project_id, zone=config.service_zone, instance=formattingInstance,
-		                                                 deviceName=config.service_name).execute()
+		detachResponse = compute.instances().detachDisk(project=config.project_id, zone=config.service_zone, instance=formattingInstance, deviceName=config.service_name).execute()
 
 		# Wait for the detach operation to complete
 		while True:
 			try:
-				result = compute.zoneOperations().get(project=config.project_id, zone=config.service_zone,
-				                                      operation=detachResponse['name']).execute()
+				result = compute.zoneOperations().get(project=config.project_id, zone=config.service_zone, operation=detachResponse['name']).execute()
 			except HttpError:
 				break
 			else:
@@ -469,29 +559,91 @@ class PipelineServiceUtils:
 					break
 
 		# create the RCs and Services
-		pipelineVolume = {
+		mysqlPass = createPassword()
+		rcUrl = API_ROOT + REPLICATION_CONTROLLERS_URI
+		serviceUrl = API_ROOT + SERVICES_URI
 
+		mysqlRc = {
+			"apiVersion": "v1",
+			"kind": "ReplicationController",
+			"metadata": {
+				"name": "mysql-server"
+			},
+			"spec": {
+				"replicas": 1,
+				"selector": {
+					"role": "mysql-server"
+				},
+				"template": {
+					"metadata": {
+						"labels": {
+							"role": "mysql-server"
+						}
+					},
+					"spec": {
+						"containers": [
+							{
+								"name": "mysql-server",
+								"image": "mysql",
+								"env": [
+									{
+										"name": "MYSQL_ROOT_PASSWORD",
+										"value": mysqlPass
+									}
+								],
+								"ports": [
+									{
+										"name": "mysql-port",
+										"containerPort": 3306
+									}
+								],
+								"securityContext": {
+									"privileged": True
+								}
+							}
+						]
+					}
+				}
+			}
 		}
 
-		pipelineVolumeClaim = {
+		response = K8S_SESSION.post(rcUrl, headers=API_HEADERS, json=mysqlRc)
 
+		# if the response isn't what's expected, raise an exception
+		if response.status_code != 201:
+			if response.status_code == 409:  # already exists
+				pass
+			else:
+				print "MySQL rc creation failed: {reason}".format(reason=response.status_code)
+				exit(-1)  # probably should raise an exception
+
+		mysqlService = {
+			"kind": "Service",
+			"apiVersion": "v1",
+			"metadata": {
+				"name": "mysql-server"
+			},
+			"spec": {
+				"ports": [
+					{
+						"port": 3306
+					}
+				],
+				"selector": {
+					"role": "mysql-server"
+				}
+			}
 		}
 
-		mysqlReaderRc = {
+		response = K8S_SESSION.post(serviceUrl, headers=API_HEADERS, json=mysqlService)
 
-		}
-
-		mysqlReaderService = {
-
-		}
-
-		mysqlWriterRc = {
-
-		}
-
-		mysqlWriterService = {
-
-		}
+		# if the response isn't what's expected, raise an exception
+		if response.status_code != 201:
+			if response.status_code == 409:  # already exists
+				pass
+			else:
+				print "MySQL service creation failed: {reason}".format(reason=response.status_code)
+				exit(-1)  # probably should raise an exception
 
 		pipelineRc = {
 			"apiVersion": "v1",
@@ -500,7 +652,7 @@ class PipelineServiceUtils:
 				"name": "pipeline-server"
 			},
 			"spec": {
-				"replicas": config.service_container_replicas,
+				"replicas": int(config.service_cores) * int(config.service_node_count),
 				"selector": {
 					"role": "pipeline-server"
 				},
@@ -515,9 +667,15 @@ class PipelineServiceUtils:
 							{
 								"name": "pipeline-server",
 								"image": "b.gcr.io/isb-cgc-pipelines-public-docker-images/isb-cgc-pipelines:latest",
+								"env": [
+									{
+										"name": "PIPELINES_DB_PASSWORD",
+										"value": mysqlPass
+									}
+								],
 								"ports": [
 									{
-										"name": "pipelines",
+										"name": "pipeline-port",
 										"containerPort": 80
 									}
 								],
@@ -529,8 +687,17 @@ class PipelineServiceUtils:
 					}
 				}
 			}
-
 		}
+
+		response = K8S_SESSION.post(rcUrl, headers=API_HEADERS, json=pipelineRc)
+
+		# if the response isn't what's expected, raise an exception
+		if response.status_code != 201:
+			if response.status_code == 409:  # already exists
+				pass
+			else:
+				print "Pipeline rc creation failed: {reason}".format(reason=response.status_code)
+				exit(-1)  # probably should raise an exception
 
 		pipelineService = {
 			"kind": "Service",
@@ -545,24 +712,67 @@ class PipelineServiceUtils:
 					}
 				],
 				"selector": {
-			    		"role": "pipeline-server"
-				}
+					"role": "pipeline-server"
+				},
+				"type": "LoadBalancer"
 			}
 		}
+
+		response = K8S_SESSION.post(serviceUrl, headers=API_HEADERS, json=pipelineService)
+
+		# if the response isn't what's expected, raise an exception
+		if response.status_code != 201:
+			if response.status_code == 409:  # already exists
+				pass
+			else:
+				print "Pipeline service creation failed: {reason}".format(reason=response.status_code)
+				exit(-1)  # probably should raise an exception
+
+		# TODO: open firewall for port 80 on the cluster instances (for now, do this manually)
 
 		print "Cluster bootstrap was successful!"
 
 	@staticmethod
 	def bootstrapFunctions(functions, pubsub, logging, http, config):
-		##
-		## create the following pubsub topics (according to configuration values):
-		## pipeline-server-logs (not required), pipeline-job-stdout-logs (not required), pipeline-job-stderr-logs (not required),
-		## pipeline-vm-insert (required), pipeline-vm-preempted (required), pipeline-vm-delete (required)
-		##
-		## deploy functions corresponding to the created pubsub topics
-		##
-		## create log sinks for pipeline vm logs
-		pass
+		# create the following pubsub topics and functions (according to configuration values):
+		# pipeline-server-logs (not required), pipeline-job-stdout-logs (not required), pipeline-job-stderr-logs (not required),
+		# pipeline-vm-insert (required), pipeline-vm-preempted (required), pipeline-vm-delete (required)
+
+		# TODO: move topics that aren't required to the configuration file
+		triggerPubsub = ['pipelineVmInsert', 'pipelineVmPreempted', 'pipelineVmDelete']
+		triggerHttp = ['pipelineServerLogs', 'pipelineJobStdoutLogs', 'pipelineJobStderrLogs', ]
+
+		for t in triggerPubsub:
+			try:
+				pubsub.projects().topics().get().execute(topic={"name": t})
+			except HttpError as e:
+				try:
+					pubsub.projects().topics().create().execute(name=t, body={"name": t})
+				except HttpError as e:
+					print "ERROR: couldn't create pubsub topic {t} : {reason}".format(t=t, reason=e)
+					exit(-1)
+			else:
+				try:
+					subprocess.check_call(["gcloud", "alpha", "functions", "deploy", t, "--bucket", config.service_callbacks, "--trigger-topic", t])
+					# TODO: polling ?
+				except subprocess.CalledProcessError as e:
+					print e
+
+		for t in triggerHttp:
+			try:
+				subprocess.check_call(
+					["gcloud", "alpha", "functions", "deploy", t, "--bucket", config.service_callbacks, "--trigger-http", t])
+				# TODO: polling ?
+			except subprocess.CalledProcessError as e:
+				print e
+
+		# create log sinks for pipeline vm logs
+		resource.type="gce_instance"
+		resource.labels.instance_id = "ggp-*"
+		jsonPayload.event_subtype = "compute.instances.insert"
+		logName = "projects/{project}/logs/syslog".format(project=config.project_id)
+		timestamp
+
 
 class DataUtils(object):
 	@staticmethod
