@@ -13,7 +13,7 @@ In order to use the ISB-CGC-pipelines tools, the following requirements must be 
 
 ### Method 1: Manual Installation
 
-To install the tools manually, run the following commands:
+To install the tools manually, run the following commands (tested on Debian 8):
 
 ```
 # install gcsfuse 
