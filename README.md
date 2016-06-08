@@ -16,7 +16,26 @@ In order to use the ISB-CGC-pipelines tools, the following requirements must be 
 To install the tools manually, run the following commands:
 
 ```
-# clone the repo
+# install gcsfuse 
+
+export GCSFUSE_REPO=gcsfuse-`lsb_release -c -s`
+echo "deb http://packages.cloud.google.com/apt $GCSFUSE_REPO main" | sudo tee /etc/apt/sources.list.d/gcsfuse.list
+curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
+sudo apt-get update && sudo apt-get install gcsfuse
+
+# install additional python tools
+
+sudo apt-get install build-essential python-dev libffi-dev libssl-dev python-pip git wget sqlite3
+pip install -U virtualenv google-api-python-client pyinotify json-spec python-dateutil
+
+# install and minimally configure supervisor
+
+sudo apt-get install supervisor
+sudo groupadd supervisor
+sudo chgrp -R supervisor /etc/supervisor /var/log/supervisor
+sudo chmod -R 0775 /etc/supervisor /var/log/supervisor
+
+# clone the ISB-CGC-pipelines repo
 
 git clone https://github.com/isb-cgc/ISB-CGC-pipelines.git
 
