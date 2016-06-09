@@ -1,11 +1,9 @@
 import os
 import sys
-import uuid
 import math
 import string
-import sqlite3
 import requests
-import pyinotify
+import MySQLdb
 import subprocess
 from time import time, sleep
 from datetime import datetime
@@ -188,23 +186,25 @@ class PipelineSchedulerUtils(object):
 
 
 class PipelineDbUtils(object):
-	def __init__(self, config):
-		self._config = config
-		self._sqliteConn = sqlite3.connect(os.path.join(self._config.pipelines_home, 'isb-cgc-pipelines.db'))
-		self._pipelinesDb = self._sqliteConn.cursor()
+	def __init__(self, user, db, password, ip, port):
+		self._mysqlConn = MySQLdb.connect(host=ip, user=user, passwd=password, db=db, port=port)
+		self._pipelinesDb = self._mysqlConn.cursor()
+
+	def __del__(self):
+		self._mysqlConn.close()
 
 	def closeConnection(self):
-		self._sqliteConn.close()
+		self._mysqlConn.close()
 
 	def insertJob(self, *args):  # *args: operationId, pipelineName, tag, currentStatus, preemptions, gcsLogPath, stdoutLog, stderrLog
 		self._pipelinesDb.execute("INSERT INTO jobs (operation_id, pipeline_name, tag, current_status, preemptions, gcs_log_path, stdout_log, stderr_log, create_time, end_time, processing_time) VALUES (?,?,?,?,?,?,?,?,?,?,?)", tuple(args))
-		self._sqliteConn.commit()
+		self._mysqlConn.commit()
 
 		return self._pipelinesDb.lastrowid
 
 	def insertJobDependency(self, parentId, childId):
 		self._pipelinesDb.execute("INSERT INTO job_dependencies (parent_id, child_id) VALUES (?,?)", (parentId, childId))
-		self._sqliteConn.commit()
+		self._mysqlConn.commit()
 
 	def updateJob(self, jobId, setValues): # setValues -> dict
 		if "preemptions" in setValues.keys():
@@ -215,7 +215,7 @@ class PipelineDbUtils(object):
 		query = "UPDATE jobs SET {values} WHERE job_id = ?".format(values=','.join(["{v} = ?".format(v=v) for v in setValues.iterkeys()]))
 
 		self._pipelinesDb.execute(query, tuple(setValues.itervalues()) + (jobId,))
-		self._sqliteConn.commit()
+		self._mysqlConn.commit()
 
 	def getParentJobs(self, childId):
 		return self._pipelinesDb.execute("SELECT parent_id FROM job_dependencies WHERE child_id = ?", (childId,)).fetchall()
@@ -284,11 +284,11 @@ class PipelineDbUtils(object):
 	def createJobTables(self):
 		if len(self._pipelinesDb.execute('SELECT name FROM sqlite_master WHERE type="table" AND name="jobs"').fetchall()) == 0:
 			self._pipelinesDb.execute('CREATE TABLE jobs (job_id INTEGER PRIMARY KEY AUTOINCREMENT, operation_id VARCHAR(128), pipeline_name VARCHAR(128), tag VARCHAR(128), current_status VARCHAR(128), preemptions INTEGER, gcs_log_path VARCHAR(128), stdout_log VARCHAR(128), stderr_log VARCHAR(128), create_time VARCHAR(128), end_time VARCHAR(128), processing_time FLOAT)')
-			self._sqliteConn.commit()
+			self._mysqlConn.commit()
 
 		if len(self._pipelinesDb.execute('SELECT name FROM sqlite_master WHERE type="table" AND name="job_dependencies"').fetchall()) == 0:
 			self._pipelinesDb.execute("CREATE TABLE job_dependencies (row_id INTEGER PRIMARY KEY AUTOINCREMENT, parent_id INTEGER, child_id INTEGER)")
-			self._sqliteConn.commit()
+			self._mysqlConn.commit()
 
 
 class PipelineServiceUtils:
@@ -558,37 +558,44 @@ class PipelineServiceUtils:
 				if result['status'] == 'DONE':
 					break
 
+		# create the service account secret (?)
+
+
 		# create the RCs and Services
 		mysqlPass = createPassword()
 		rcUrl = API_ROOT + REPLICATION_CONTROLLERS_URI
 		serviceUrl = API_ROOT + SERVICES_URI
 
-		mysqlRc = {
+		mysqlWriterRc = {
 			"apiVersion": "v1",
 			"kind": "ReplicationController",
 			"metadata": {
-				"name": "mysql-server"
+				"name": "mysql-writer"
 			},
 			"spec": {
 				"replicas": 1,
 				"selector": {
-					"role": "mysql-server"
+					"role": "mysql-writer"
 				},
 				"template": {
 					"metadata": {
 						"labels": {
-							"role": "mysql-server"
+							"role": "mysql-writer"
 						}
 					},
 					"spec": {
 						"containers": [
 							{
-								"name": "mysql-server",
+								"name": "mysql-writer",
 								"image": "mysql",
 								"env": [
 									{
 										"name": "MYSQL_ROOT_PASSWORD",
 										"value": mysqlPass
+									},
+									{
+										"name": "MYSQL_DATABASE",
+										"value": "pipelines"
 									}
 								],
 								"ports": [
@@ -599,6 +606,23 @@ class PipelineServiceUtils:
 								],
 								"securityContext": {
 									"privileged": True
+								},
+								"volumeMounts": [
+									{
+										"name": "pipeline-job-data",
+										"mountPath": "/var/lib/mysql",
+										"readOnly": False
+									}
+								]
+							}
+						],
+						"volumes": [
+							{
+								"name": "pipeline-job-data",
+								"gcePersistentDisk": {
+									"pdName": diskResponse["name"],
+									"readOnly": False,
+									"fsType": "ext4"
 								}
 							}
 						]
@@ -607,17 +631,17 @@ class PipelineServiceUtils:
 			}
 		}
 
-		response = K8S_SESSION.post(rcUrl, headers=API_HEADERS, json=mysqlRc)
+		response = K8S_SESSION.post(rcUrl, headers=API_HEADERS, json=mysqlWriterRc)
 
 		# if the response isn't what's expected, raise an exception
 		if response.status_code != 201:
 			if response.status_code == 409:  # already exists
 				pass
 			else:
-				print "MySQL rc creation failed: {reason}".format(reason=response.status_code)
+				print "MySQL writer creation failed: {reason}".format(reason=response.status_code)
 				exit(-1)  # probably should raise an exception
 
-		mysqlService = {
+		mysqlWriterService = {
 			"kind": "Service",
 			"apiVersion": "v1",
 			"metadata": {
@@ -635,14 +659,117 @@ class PipelineServiceUtils:
 			}
 		}
 
-		response = K8S_SESSION.post(serviceUrl, headers=API_HEADERS, json=mysqlService)
+		response = K8S_SESSION.post(serviceUrl, headers=API_HEADERS, json=mysqlWriterService)
 
 		# if the response isn't what's expected, raise an exception
 		if response.status_code != 201:
 			if response.status_code == 409:  # already exists
 				pass
 			else:
-				print "MySQL service creation failed: {reason}".format(reason=response.status_code)
+				print "MySQL writer service creation failed: {reason}".format(reason=response.status_code)
+				exit(-1)  # probably should raise an exception
+
+		mysqlReaderRc = {
+			"apiVersion": "v1",
+			"kind": "ReplicationController",
+			"metadata": {
+				"name": "mysql-reader"
+			},
+			"spec": {
+				"replicas": int(config.service_cores) * int(config.service_node_count)/2,
+				"selector": {
+					"role": "mysql-reader"
+				},
+				"template": {
+					"metadata": {
+						"labels": {
+							"role": "mysql-reader"
+						}
+					},
+					"spec": {
+						"containers": [
+							{
+								"name": "mysql-reader",
+								"image": "mysql",
+								"env": [
+									{
+										"name": "MYSQL_ROOT_PASSWORD",
+										"value": mysqlPass
+									},
+									{
+										"name": "MYSQL_DATABASE",
+										"value": "pipelines"
+									}
+								],
+								"ports": [
+									{
+										"name": "mysql-port2",
+										"containerPort": 3307
+									}
+								],
+								"securityContext": {
+									"privileged": True
+								},
+								"volumeMounts": [
+									{
+										"name": "pipeline-job-data",
+										"mountPath": "/var/lib/mysql",
+										"readOnly": True
+									}
+								]
+							}
+						],
+						"volumes": [
+							{
+								"name": "pipeline-job-data",
+								"gcePersistentDisk": {
+									"pdName": diskResponse["name"],
+									"readOnly": True,
+									"fsType": "ext4"
+								}
+							}
+						]
+					}
+				}
+			}
+		}
+
+		response = K8S_SESSION.post(rcUrl, headers=API_HEADERS, json=mysqlWriterRc)
+
+		# if the response isn't what's expected, raise an exception
+		if response.status_code != 201:
+			if response.status_code == 409:  # already exists
+				pass
+			else:
+				print "MySQL writer creation failed: {reason}".format(reason=response.status_code)
+				exit(-1)  # probably should raise an exception
+
+		mysqlReaderService = {
+			"kind": "Service",
+			"apiVersion": "v1",
+			"metadata": {
+				"name": "mysql-reader"
+			},
+			"spec": {
+				"ports": [
+					{
+						"port": 3307
+					}
+				],
+				"selector": {
+					"role": "mysql-reader"
+				}
+			}
+		}
+
+		response = K8S_SESSION.post(serviceUrl, headers=API_HEADERS, json=mysqlReaderService)
+
+		# if the response isn't what's expected, raise an exception
+		if response.status_code != 201:
+			if response.status_code == 409:  # already exists
+				pass
+			else:
+				print "MySQL reader service creation failed: {reason}".format(reason=response.status_code)
 				exit(-1)  # probably should raise an exception
 
 		pipelineRc = {
@@ -652,7 +779,7 @@ class PipelineServiceUtils:
 				"name": "pipeline-server"
 			},
 			"spec": {
-				"replicas": int(config.service_cores) * int(config.service_node_count),
+				"replicas": int(config.service_cores) * int(config.service_node_count)/2,
 				"selector": {
 					"role": "pipeline-server"
 				},
@@ -667,12 +794,6 @@ class PipelineServiceUtils:
 							{
 								"name": "pipeline-server",
 								"image": "b.gcr.io/isb-cgc-pipelines-public-docker-images/isb-cgc-pipelines:latest",
-								"env": [
-									{
-										"name": "PIPELINES_DB_PASSWORD",
-										"value": mysqlPass
-									}
-								],
 								"ports": [
 									{
 										"name": "pipeline-port",
@@ -697,7 +818,7 @@ class PipelineServiceUtils:
 				pass
 			else:
 				print "Pipeline rc creation failed: {reason}".format(reason=response.status_code)
-				exit(-1)  # probably should raise an exception
+				exit(-1)
 
 		pipelineService = {
 			"kind": "Service",
@@ -720,15 +841,18 @@ class PipelineServiceUtils:
 
 		response = K8S_SESSION.post(serviceUrl, headers=API_HEADERS, json=pipelineService)
 
-		# if the response isn't what's expected, raise an exception
+		# if the response isn't what's expected, exit
 		if response.status_code != 201:
 			if response.status_code == 409:  # already exists
 				pass
 			else:
 				print "Pipeline service creation failed: {reason}".format(reason=response.status_code)
-				exit(-1)  # probably should raise an exception
+				exit(-1)
 
 		# TODO: open firewall for port 80 on the cluster instances (for now, do this manually)
+
+		# initialize the pipelines db
+		PipelineDbUtils('root', 'pipelines', mysqlPass, config.service_endpoint, 3307).createJobTables()
 
 		print "Cluster bootstrap was successful!"
 
@@ -767,11 +891,44 @@ class PipelineServiceUtils:
 				print e
 
 		# create log sinks for pipeline vm logs
-		resource.type="gce_instance"
-		resource.labels.instance_id = "ggp-*"
-		jsonPayload.event_subtype = "compute.instances.insert"
-		logName = "projects/{project}/logs/syslog".format(project=config.project_id)
-		timestamp
+		timestamp = datetime.datetime.utcnow().isoformat("T") + "Z"  # RFC3339 timestamp
+
+		pipelineInsertBody = {
+			"destination": "googleapis.com/auth/pubsub/projects/{project}/topics/pipelineVmInsert".format(project=config.project_id),
+			"filter": "resource.type=\"gce_instance\" AND timestamp > {tz} AND jsonPayload.resource.name:\"ggp-\" AND jsonPayload.event_subtype=\"compute.instances.insert\" AND NOT error AND logName=\"projects/{project}/logs/compute.googleapis.com%2Factivity_log\"".format(
+				project=config.project_id, tz=timestamp)
+		}
+		try:
+			logging.projects().sinks().create(projectName=config.project_id, body=pipelineInsertBody).execute()
+		except HttpError as e:
+			print "ERROR: couldn't create the pipelineVmInsert log sink : {reason}".format(reason=e)
+			exit(-1)
+
+		pipelineDeleteBody = {
+			"destination": "googleapis.com/auth/pubsub/projects/{project}/topics/pipelineVmDelete".format(
+				project=config.project_id),
+			"filter": "resource.type=\"gce_instance\" AND timestamp > {tz} AND jsonPayload.resource.name:\"ggp-\" AND jsonPayload.event_subtype=\"compute.instances.delete\" AND NOT error AND logName=\"projects/{project}/logs/compute.googleapis.com%2Factivity_log\"".format(
+				project=config.project_id, tz=timestamp)
+		}
+		try:
+			logging.projects().sinks().create(projectName=config.project_id, body=pipelineDeleteBody).execute()
+		except HttpError as e:
+			print "ERROR: couldn't create the pipelineVmDelete log sink : {reason}".format(reason=e)
+			exit(-1)
+
+		pipelineInsertBody = {
+			"destination": "googleapis.com/auth/pubsub/projects/{project}/topics/pipelineVmPreempted".format(
+				project=config.project_id),
+			"filter": "resource.type=\"gce_instance\" AND timestamp > {tz} AND jsonPayload.resource.name:\"ggp-\" AND jsonPayload.event_subtype=\"compute.instances.preempted\" AND NOT error AND logName=\"projects/{project}/logs/compute.googleapis.com%2Factivity_log\"".format(
+				project=config.project_id, tz=timestamp)
+		}
+		try:
+			logging.projects().sinks().create(projectName=config.project_id, body=pipelineInsertBody).execute()
+		except HttpError as e:
+			print "ERROR: couldn't create the pipelineVmPreempted log sink : {reason}".format(reason=e)
+			exit(-1)
+
+		print "Cloud Functions bootstrap successful!"
 
 
 class DataUtils(object):

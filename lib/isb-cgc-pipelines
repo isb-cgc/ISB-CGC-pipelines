@@ -1,8 +1,10 @@
 #!/usr/bin/env python
 import os
 import shutil
+import pickle
 import argparse
 import httplib2
+import requests
 import subprocess
 from ConfigParser import SafeConfigParser
 from pipelines.builder import PipelineBuilder
@@ -35,42 +37,41 @@ def deployService(args, config):
 	logging = discovery.build('logging', 'v2', http=http)
 
 	# bootstrap the k8s cluster for hosting the service
-	PipelineServiceUtils.bootstrapServiceCluster(compute, gke, http, config)
+	PipelineServiceUtils.bootstrapCluster(compute, gke, http, config)
+
+	# upload the functions to the bucket
+	try:
+		subprocess.check_call(["gsutil", "cp", "../cloud_functions/*", args.bucket])
+	except subprocess.CalledProcessError as e:
+		print "ERROR: couldn't upload the Cloud Functions to GCS : {reason}".format(reason=e)
+		exit(-1)
 
 	# bootstrap Cloud Functions
 	PipelineServiceUtils.bootstrapFunctions(functions, pubsub, logging, http, config)
 
+def submitPipeline(args, config):
+	# construct the request payload
+	req = {
+		"args": args,
+		"config": pickle.dumps(config)
+	}
 
-def buildAndRunPipeline(args, config):
+	# construct the service url from the cluster endpoint, port and route
+	serviceUrl = "http://{ip}:8080/job".format(ip=config.service_endpoint)
+
+	# send the request
 	try:
-		os.makedirs(config.pipelines_home)
-	except OSError as e:
-		pass
-
-	if args.scriptUrl:
-		pipelineSpec = PipelineSchema(args.pipelineName, config, args.logsPath, args.imageName,
-		                              scriptUrl=args.scriptUrl, cores=args.cores,
-		                              mem=args.mem, diskSize=args.diskSize, diskType=args.diskType, env=args.env,
-		                              inputs=args.inputs, outputs=args.outputs, tag=args.tag,
-		                              preemptible=args.preemptible)
-	elif args.cmd:
-		pipelineSpec = PipelineSchema(args.pipelineName, config, args.logsPath, args.imageName, cmd=args.cmd,
-		                              cores=args.cores,
-		                              mem=args.mem, diskSize=args.diskSize, diskType=args.diskType, env=args.env,
-		                              inputs=args.inputs, outputs=args.outputs, tag=args.tag,
-		                              preemptible=args.preemptible)
-
-	# TODO: translate code below into a server request; move the code below to the server
-	pipelineBuilder = PipelineBuilder(config)
-	pipelineBuilder.addStep(pipelineSpec)
-	pipelineBuilder.run()
-
+		resp = requests.post(serviceUrl, req)
+	except requests.HTTPError as e:
+		print "ERROR: couldn't submit pipeline : {reason}".format(reason=e)
+	else:
+		print "Job {j} submitted successfully!".format(j=response.json()["job_id"])
 
 def stopPipeline(args, unknown, config):  # TODO: implement
 	pass
 
 
-def restartJobs(args, config):  # TODO: test
+def restartJobs(args, config):  # TODO: reimplement
 	pipelineDbUtils = PipelineDbUtils(config)
 
 	if args.jobId:
@@ -96,7 +97,7 @@ def cleanPipelines(args, unknown, config):  # TODO: implement
 	pass
 
 
-def getJobLogs(args, config): 
+def getJobLogs(args, config):  # TODO: reimplement
 	pipelineDbUtils = PipelineDbUtils(config)
 
 	jobInfo = pipelineDbUtils.getJobInfo(select=["stdout_log", "stderr_log", "gcs_log_path"], where={"job_id": args.jobId})
@@ -127,7 +128,7 @@ def getJobLogs(args, config):
 	pipelineDbUtils.closeConnection()
 
 
-def getJobsList(args, unknown, config):
+def getJobsList(args, unknown, config):  # TODO: reimplement
 	header = "JOBID%sPIPELINE%sOPERATION ID%sTAG%sSTATUS%sCREATE TIME%sPREEMPTIONS\n"
 	jobStatusString = "{jobId}%s{pipeline}%s{operationId}%s{tag}%s{status}%s{createTime}%s{preemptions}\n"
 	
@@ -205,7 +206,7 @@ def getJobsList(args, unknown, config):
 		print "No jobs found"
 
 
-def configureTool(args, unknown):
+def configureTool(args, unknown):  # TODO: reimplement
 	config = SafeConfigParser()
 	configPath = os.path.join(os.environ["HOME"], ".isb-cgc-pipelines")
 	configFile = os.path.join(configPath, "config")
@@ -330,7 +331,7 @@ def main(args, unknown):
 
 	if args.subcommand == "submit":
 		config = PipelinesConfig(PIPELINES_CONFIG_PATH)
-		buildAndRunPipeline(args, config)
+		submitPipeline(args, config)
 
 	elif args.subcommand == "stop":
 		config = PipelinesConfig(PIPELINES_CONFIG_PATH)
@@ -353,17 +354,6 @@ def main(args, unknown):
 
 		if args.entity == "jobs":
 			getJobsList(args, unknown, config)
-
-	elif args.subcommand == "scheduler":
-		config = PipelinesConfig(PIPELINES_CONFIG_PATH)
-
-		if args.schedulerOperation == "stop":
-			stopScheduler(args, unknown, config)
-		elif args.schedulerOperation == "start":
-			startScheduler(args, unknown, config)
-		else:
-			print "ERROR: unrecognized option {o}".format(o=args.startOrStop)
-			exit(-1)
 
 	elif args.subcommand == "config":
 		configureTool(args, unknown)

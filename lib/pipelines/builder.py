@@ -17,7 +17,7 @@ class PipelineBuilder(object):
 
 		self._pipelines.append(self._dependencyMap[root.name])
 
-	def run(self):	
+	def run(self, credentials):
 		# generate schema
 		self._generateSchema()
 
@@ -25,7 +25,7 @@ class PipelineBuilder(object):
 		self._validateSchema()
 
 		# initialize job configs
-		self._initializePipelineConfigs()	
+		self._submitSchema(credentials)
 
 	def _generateSchema(self):
 		self._schema.update({"pipelines": self._pipelines})
@@ -99,7 +99,8 @@ class PipelineBuilder(object):
 		except: # what kind of exception?
 			exit(-1)
 
-	def _initializePipelineConfigs(self):
+	def _submitSchema(self, dbCredentials, googleCredentials):
+		# Open a db connection
 		jobIdMap = {}
 
 		for p in self._schema["pipelines"]:  # Add all jobs to the jobs table 
