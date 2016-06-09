@@ -48,8 +48,9 @@ class PipelineSchema(object):
 		self._metadata = {}
 
 		# if disk info provided, add a disk
+		mountPath = "/{pipeline}".format(pipeline=name)
+		
 		if diskSize is not None:
-			mountPath = "/{pipeline}".format(pipeline=name)
 			if diskType is None:
 				diskType = "PERSISTENT_SSD"
 
