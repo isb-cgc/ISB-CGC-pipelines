@@ -3,6 +3,7 @@ import os
 import shutil
 import argparse
 import pyinotify
+from time import sleep
 from pipelines.utils import PipelinesConfig, PipelinesConfigUpdateHandler, PipelineSchedulerUtils, PipelineDbUtils
 
 # NOTE: this process should be started up as part of the scheduling system (managed by Supervisor)
@@ -21,7 +22,7 @@ class WaitingJobsHandler(pyinotify.ProcessEvent):
 				continue
 			else:
 				break
-				
+
 		jobInfo = self._pipelineDbUtils.getJobInfo(select=["pipeline_name", "tag"], where={"job_id": event.name})
 		PipelineSchedulerUtils.writeStdout("Scheduling job {pipeline}-{tag} ... ".format(pipeline=jobInfo[0].pipeline_name, tag=jobInfo[0].tag))
 		shutil.copy(event.pathname, os.path.join(self._config.pipelines_home, "RUNNING", event.name))
