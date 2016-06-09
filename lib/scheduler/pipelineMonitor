@@ -68,14 +68,12 @@ class MonitoringHandler(pyinotify.ProcessEvent):
 
 	def process_IN_CREATE(self, event):
 		# event.pathname -> <pipelines_home>/MONITORING/start
-		sleep(float(self._config.polling_interval))
 		
 		operationIds = [x.operation_id for x in self._pipelineDbUtils.getJobInfo(select=["operation_id"], where={"current_status": "RUNNING"})]
 
 		while len(operationIds) > 0:
-			#createTime = int(time()) - (24*60*60)  # will collect info about all jobs within the last 24 hours, and will ignore operations whose ids are not in the database
-			#operationsFilter = "projectId = {projectId} AND createTime >= {createTime}".format(createTime=createTime, projectId=self._config.project_id)
-
+			sleep(float(self._config.polling_interval))
+			
 			if self._credentials.access_token_expired:
 				self._credentials.refresh(self._http)
 
@@ -84,15 +82,9 @@ class MonitoringHandler(pyinotify.ProcessEvent):
 				status = self._pipelineService.operations().get(name=op).execute()
 
 			except HttpError as e:
-				PipelineSchedulerUtils.writeStdout("WARNING: couldn't get operations list : {reason}".format(reason=e))
+				PipelineSchedulerUtils.writeStdout("WARNING: couldn't get operation status : {reason}".format(reason=e))
 				continue
 
-			#operationsToCheck = [op for op in operationsInfo["operations"] if op["name"] in operationIds]
-
-			#PipelineSchedulerUtils.writeStdout("Checking operations:\t{ops}".format(ops=" ,".join(operationIds)))
-			#PipelineSchedulerUtils.writeStdout("Found {n} operations to check".format(n=len(operationsToCheck)))
-			
-			#for status in operationsToCheck:
 			stderrLog = os.path.join(status["metadata"]["request"]["pipelineArgs"]["logging"]["gcsPath"], "{op}-stderr.log".format(op=status["name"].split('/')[1]))
 			jobInfo = self._pipelineDbUtils.getJobInfo(select=["job_id", "pipeline_name", "tag", "create_time"], where={"operation_id": status["name"]})
 
