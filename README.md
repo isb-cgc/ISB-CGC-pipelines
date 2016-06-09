@@ -13,10 +13,29 @@ In order to use the ISB-CGC-pipelines tools, the following requirements must be 
 
 ### Method 1: Manual Installation
 
-To install the tools manually, run the following commands:
+To install the tools manually, run the following commands (tested on Debian 8):
 
 ```
-# clone the repo
+# install gcsfuse 
+
+export GCSFUSE_REPO=gcsfuse-`lsb_release -c -s`
+echo "deb http://packages.cloud.google.com/apt $GCSFUSE_REPO main" | sudo tee /etc/apt/sources.list.d/gcsfuse.list
+curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
+sudo apt-get update && sudo apt-get install gcsfuse
+
+# install additional python tools
+
+sudo apt-get install build-essential python-dev libffi-dev libssl-dev python-pip git wget sqlite3
+pip install -U virtualenv google-api-python-client pyinotify json-spec python-dateutil
+
+# install and minimally configure supervisor
+
+sudo apt-get install supervisor
+sudo groupadd supervisor
+sudo chgrp -R supervisor /etc/supervisor /var/log/supervisor
+sudo chmod -R 0775 /etc/supervisor /var/log/supervisor
+
+# clone the ISB-CGC-pipelines repo
 
 git clone https://github.com/isb-cgc/ISB-CGC-pipelines.git
 
@@ -59,11 +78,15 @@ To configure the tool, run the following command and follow the prompts:
 
 ### Starting and Stopping the Scheduler
 
-To start the scheduler:
+In order to start up the scheduler, you need to belong to the `supervisor` Linux group.  Run the following command and then log out and back in again for the update to take effect:
+
+`sudo usermod -a -G supervisor $USER`
+
+Then start the scheduler:
 
 `isb-cgc-pipelines scheduler start`
 
-To stop the scheduler:
+To stop the scheduler later on:
 
 `isb-cgc-pipelines scheduler stop`
 
@@ -93,7 +116,7 @@ Here is an example command that will submit a "fastqc" task, which will use an o
 ```
 isb-cgc-pipelines submit --pipelineName fastqc \
                 --inputs gs://isb-cgc-open/ccle/BRCA/DNA-Seq/C836.MDA-MB-436.1.bam:C836.MDA-MB-436.1.bam,gs://isb-cgc-open/ccle/BRCA/DNA-Seq/C836.MDA-MB-436.1.bam.bai:C836.MDA-MB-436.1.bam.bai \
-                --outputs gs://<YOUR_GCS_OUTPUT_PATH>:*_fastqc.zip,gs://<YOUR_GCS_OUTPUT_PATH>:*_fastqc.html \
+                --outputs *_fastqc.zip:gs://<YOUR_GCS_OUTPUT_PATH>,*_fastqc.html:gs://<YOUR_GCS_OUTPUT_PATH> \
                 --cmd "fastqc C836.MDA-MB-436.1.bam" \
                 --imageName b.gcr.io/isb-cgc-public-docker-images/fastqc \
                 --cores 1 --mem 2 \
