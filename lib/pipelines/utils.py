@@ -192,10 +192,14 @@ class DataUtils(object):
 	def getFilenames(analysisId):
 		analysisDetail = DataUtils.getAnalysisDetail(analysisId)
 		files = []
+		filenames = []
 		if len(analysisDetail["result_set"]["results"]) > 0:
 			files = analysisDetail["result_set"]["results"][0]["files"]
 
-		return files
+		for f in files:
+			filenames.append(f["filename"])
+
+		return filenames
 
 	@staticmethod
 	def calculateDiskSize(inputFile=None, inputFileSize=None, analysisId=None, scalingFactor=None, roundToNearestGbInterval=None):
