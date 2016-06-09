@@ -351,9 +351,9 @@ def configureTool(args, unknown):
 	
 			config.set("pipelines", "pipelines_home", pipelinesHome)
 			
-			pollingInterval = raw_input("Enter the number of seconds for the operations status polling interval (leave blank to use default 300s): ")
+			pollingInterval = raw_input("Enter the number of seconds for the operations status polling interval (leave blank to use default 10s): ")
 			if len(pollingInterval) == 0:
-				pollingInterval = "300"
+				pollingInterval = "10"
 				
 			config.set("pipelines", "polling_interval", pollingInterval)
 
