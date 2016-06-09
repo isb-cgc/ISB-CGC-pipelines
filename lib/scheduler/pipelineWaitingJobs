@@ -14,6 +14,14 @@ class WaitingJobsHandler(pyinotify.ProcessEvent):
 		self._pipelineDbUtils = PipelineDbUtils(self._config)
 
 	def process_IN_CLOSE_WRITE(self, event):
+		while True:
+			runningJobs = len(self._pipelineDbUtils.getJobInfo(select=["*"]), where={"current_status": "RUNNING"})
+			if runningJobs >= self._config.max_running_jobs:
+				sleep(30)
+				continue
+			else:
+				break
+				
 		jobInfo = self._pipelineDbUtils.getJobInfo(select=["pipeline_name", "tag"], where={"job_id": event.name})
 		PipelineSchedulerUtils.writeStdout("Scheduling job {pipeline}-{tag} ... ".format(pipeline=jobInfo[0].pipeline_name, tag=jobInfo[0].tag))
 		shutil.copy(event.pathname, os.path.join(self._config.pipelines_home, "RUNNING", event.name))
