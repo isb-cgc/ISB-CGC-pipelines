@@ -6,12 +6,11 @@ from pipelines.utils import DataUtils
 parser = argparse.ArgumentParser()
 parser.add_argument("--analysisId", required=True)
 args = parser.parse_args()
-	
-try:
-	print DataUtils.getChecksum(args.analysisId)
-except LookupError:
-	print "ERROR: no files found for analysis ID {a}!".format(a=args.analysisId)
-	exit(-1)
-	
-		
 
+files = DataUtils.getFilenames(args.analysisId)
+
+if len(files) > 0:
+	for f in files:
+		print f
+else:
+	print "No files found!"

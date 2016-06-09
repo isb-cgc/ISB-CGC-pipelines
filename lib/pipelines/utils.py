@@ -189,6 +189,15 @@ class DataUtils(object):
 		return requests.get(cghubMetadataUrl.format(analysisId=analysisId), headers=headers).json()
 
 	@staticmethod
+	def getFilenames(analysisId):
+		analysisDetail = DataUtils.getAnalysisDetail(analysisId)
+		files = []
+		if len(analysisDetail["result_set"]["results"]) > 0:
+			files = analysisDetail["result_set"]["results"][0]["files"]
+
+		return files
+
+	@staticmethod
 	def calculateDiskSize(inputFile=None, inputFileSize=None, analysisId=None, scalingFactor=None, roundToNearestGbInterval=None):
 		if inputFile is not None:
 			fileSize = int(subprocess.check_output(["gsutil", "du", inputFile]).split(' ')[0])
