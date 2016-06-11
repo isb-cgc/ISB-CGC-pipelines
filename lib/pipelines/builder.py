@@ -1,5 +1,6 @@
 import os
 import json
+import pika
 from jsonspec.validators import load  # jsonspec is licensed under BSD
 from utils import PipelineDbUtils
 
@@ -104,7 +105,7 @@ class PipelineBuilder(object):
 		jobIdMap = {}
 
 		for p in self._schema["pipelines"]:  # Add all jobs to the jobs table 
-			jobIdMap[p["name"]] = self._pipelineDbUtils.insertJob(None, p["name"], p["tag"], None, 0, p["request"]["pipelineArgs"]["logging"]["gcsPath"], None, None, None, None, None)
+			jobIdMap[p["name"]] = self._pipelineDbUtils.insertJob(None, p["name"], p["tag"], None, 0, p["request"]["pipelineArgs"]["logging"]["gcsPath"], None, None, None, None, None, p["request"])
 
 		for p in self._schema["pipelines"]:  # Add dependency info to the job dependency table
 			if "children" in p.keys() and len(p["children"]) > 0:
@@ -115,14 +116,14 @@ class PipelineBuilder(object):
 
 		for p in self._schema["pipelines"]:  # schedule pipelines
 			parents = self._pipelineDbUtils.getParentJobs(jobIdMap[p["name"]])
-			if len(parents) > 0:
-				dest = "DEPENDENT"
-			else:
-				dest = "WAITING"
+			self._pipelineDbUtils.updateJob(jobIdMap[p["name"]], setValues={"current_status": "WAITING"})
 
-			self._pipelineDbUtils.updateJob(jobIdMap[p["name"]], setValues={"current_status": dest})
-
-			with open(os.path.join(self._config.pipelines_home, dest, str(jobIdMap[p["name"]])), 'w') as f:
-				f.write("{data}".format(data=json.dumps(p["request"], indent=4)))
+			# if the job is a root job, send the job request to the queue
+			if len(parents) == 0:
+				connection = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
+				channel = connection.channel()
+				channel.queue_declare(queue="WAITING")
+				channel.basic_publish(exchange='', routing_key="WAITING", body=p["request"])
+				connection.close()
 
 		self._pipelineDbUtils.closeConnection()	

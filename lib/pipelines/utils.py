@@ -197,7 +197,7 @@ class PipelineDbUtils(object):
 		self._mysqlConn.close()
 
 	def insertJob(self, *args):  # *args: operationId, pipelineName, tag, currentStatus, preemptions, gcsLogPath, stdoutLog, stderrLog
-		self._pipelinesDb.execute("INSERT INTO jobs (operation_id, pipeline_name, tag, current_status, preemptions, gcs_log_path, stdout_log, stderr_log, create_time, end_time, processing_time) VALUES (?,?,?,?,?,?,?,?,?,?,?)", tuple(args))
+		self._pipelinesDb.execute("INSERT INTO jobs (operation_id, pipeline_name, tag, current_status, preemptions, gcs_log_path, stdout_log, stderr_log, create_time, end_time, processing_time, request) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", tuple(args))
 		self._mysqlConn.commit()
 
 		return self._pipelinesDb.lastrowid
@@ -272,7 +272,7 @@ class PipelineDbUtils(object):
 		for j in jobsInfo:
 			newDict = {}
 			if select is None:
-				select = ["job_id", "operation_id", "pipeline_name", "tag", "current_status", "preemptions", "gcs_log_path", "stdout_log", "stderr_log", "create_time", "end_time", "processing_time"]
+				select = ["job_id", "operation_id", "pipeline_name", "tag", "current_status", "preemptions", "gcs_log_path", "stdout_log", "stderr_log", "create_time", "end_time", "processing_time", "request"]
 
 			for i, k in enumerate(select):
 				newDict[k] = j[i]
@@ -283,7 +283,22 @@ class PipelineDbUtils(object):
 
 	def createJobTables(self):
 		if len(self._pipelinesDb.execute('SELECT name FROM sqlite_master WHERE type="table" AND name="jobs"').fetchall()) == 0:
-			self._pipelinesDb.execute('CREATE TABLE jobs (job_id INTEGER PRIMARY KEY AUTOINCREMENT, operation_id VARCHAR(128), pipeline_name VARCHAR(128), tag VARCHAR(128), current_status VARCHAR(128), preemptions INTEGER, gcs_log_path VARCHAR(128), stdout_log VARCHAR(128), stderr_log VARCHAR(128), create_time VARCHAR(128), end_time VARCHAR(128), processing_time FLOAT)')
+			query = (
+				'CREATE TABLE jobs (job_id INTEGER PRIMARY KEY AUTOINCREMENT, '
+				'operation_id VARCHAR(128), '
+				'pipeline_name VARCHAR(128), '
+				'tag VARCHAR(128), '
+				'current_status VARCHAR(128), '
+				'preemptions INTEGER, ',
+				'gcs_log_path VARCHAR(128), '
+				'stdout_log VARCHAR(128), '
+				'stderr_log VARCHAR(128), '
+				'create_time VARCHAR(128), '
+				'end_time VARCHAR(128), '
+				'processing_time FLOAT, '
+				'request TEXT)'
+			)
+			self._pipelinesDb.execute()
 			self._mysqlConn.commit()
 
 		if len(self._pipelinesDb.execute('SELECT name FROM sqlite_master WHERE type="table" AND name="job_dependencies"').fetchall()) == 0:
@@ -929,6 +944,10 @@ class PipelineServiceUtils:
 			exit(-1)
 
 		print "Cloud Functions bootstrap successful!"
+
+	@staticmethod
+	def bootstrapPubSub():
+		pass
 
 
 class DataUtils(object):

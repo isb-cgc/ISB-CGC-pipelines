@@ -1,0 +1,75 @@
+#!/usr/bin/env python
+
+import json
+import base64
+import httplib2
+import argparse
+from apiclient import discovery
+from oauth2client import client as oauth2client
+
+from pipelines.utils import PipelinesConfig
+
+PUBSUB_SCOPES = ['https://www.googleapis.com/auth/pubsub']
+
+
+class PubsubMessageHandlers(object):
+
+	@staticmethod
+	def pipelineVmPreempted(log):
+		# get the operation id from the log
+		# update the status of the job in the jobs db
+		# move the job file to the PREEMPTED queue
+		pass
+
+
+	@staticmethod
+	def pipelineVmDelete(log):
+		# get the operation id from the log
+		# check the status of the operation
+		# update the status in the jobs db
+		pass
+
+
+def main(args, config):
+	credentials = oauth2client.GoogleCredentials.get_application_default()
+	if credentials.create_scoped_required():
+		credentials = credentials.create_scoped(PUBSUB_SCOPES)
+
+	http = httplib2.Http()
+	credentials.authorize(http)
+
+	client = discovery.build('pubsub', 'v1', http=http)
+
+	subscription = 'projects/{project}/subscriptions/{subscription}'.format(project=config.project_id, subscription=args.subscription)
+
+	# Create a POST body for the Pub/Sub request
+	body = {
+		'returnImmediately': False
+	}
+	while True:
+
+		resp = client.projects().subscriptions().pull(subscription=subscription, body=body).execute()
+
+		receivedMessages = resp.get('receivedMessages')
+		if receivedMessages is not None:
+			ackIds = []
+			for receivedMessage in receivedMessages:
+				pubsubMessage = receivedMessage.get('message')
+				if pubsubMessage:
+					log = json.loads(base64.b64decode(str(pubsubMessage.get('data'))))
+					getattr(PubsubMessageHandlers, subscription)(log)
+					ackIds.append(receivedMessage.get('ackId'))
+
+			ackBody = {'ackIds': ackIds}
+
+			# Acknowledge the message.
+			client.projects().subscriptions().acknowledge(subscription=subscription, body=ackBody).execute()
+
+if __name__ == "__main__":
+	parser = argparse.ArgumentParser()
+	parser.add_argument("--config")
+	parser.add_argument("--subscription")
+	args = parser.parse_args()
+
+	config = PipelinesConfig(path=args.config)
+	main(args, config)
