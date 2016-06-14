@@ -34,7 +34,7 @@ API_HEADERS = {
 
 
 class PipelinesConfig(SafeConfigParser, object):
-	def __init__(self, path=None, verify=True):
+	def __init__(self, path=None, first_time=False):
 		super(PipelinesConfig, self).__init__()
 
 		if path is not None:
@@ -146,22 +146,21 @@ class PipelinesConfig(SafeConfigParser, object):
 			}
 		}
 
-		if verify:
-			self._verify()
+		if first_time:
+			for option, attrs in self._configParams.iteritems():
+				if not self.has_section(attrs["section"]):
+					self.add_section(attrs["section"])
 
-	def updateAll(self):
-		for option, attrs in self._configParams.iteritems():
-			if not self.has_section(attrs["section"]):
-				self.add_section(attrs["section"])
+				if attrs["required"]:
+					val = raw_input(attrs["message"])
+					if len(val) == 0:
+						self.update(attrs["section"], option, attrs["default"], first_time=True)
+					else:
+						self.update(attrs["section"], option, val, first_time=True)
 
-			if attrs["required"]:
-				val = raw_input(attrs["message"])
-				if len(val) == 0:
-					self.update(attrs["section"], option, attrs["default"])
-				else:
-					self.update(attrs["section"], option, val)
+		self.refresh()
 
-	def update(self, section, option, value):
+	def update(self, section, option, value, first_time=False):
 		if option not in self._configParams.keys():
 			raise ValueError("unrecognized option {s}/{o}".format(s=section, o=option))
 		else:
@@ -176,16 +175,15 @@ class PipelinesConfig(SafeConfigParser, object):
 		with open(self.path, 'w') as f:
 			self.write(f)
 
-		self.refresh()
+		if not first_time:
+			self.refresh()
 
 	def watch(self):
 		# watch changes to the config file -- needs to be run in a separate thread
-		jobStatusManager = pyinotify.WatchManager()
-		jobStatusNotifier = pyinotify.Notifier(jobStatusManager)
-
-		jobStatusManager.add_watch(self.path, pyinotify.IN_CLOSE_WRITE, proc_fun=PipelinesConfigUpdateHandler(config=self))
-
-		jobStatusNotifier.loop()
+		configStatusManager = pyinotify.WatchManager()
+		configStatusNotifier = pyinotify.Notifier(configStatusManager)
+		configStatusManager.add_watch(self.path, pyinotify.IN_CLOSE_WRITE, proc_fun=PipelinesConfigUpdateHandler(config=self))
+		configStatusNotifier.loop()
 
 	def refresh(self):
 		self.__dict__.update(self._verify())

@@ -231,8 +231,6 @@ def main(args, unknown):
 			getJobsList(args, unknown, config)
 
 	elif args.subcommand == "config":
-		config = PipelinesConfig(verify=False)
-
 		parser = argparse.ArgumentParser()
 
 		if args.configOperation == "set":
@@ -240,9 +238,10 @@ def main(args, unknown):
 			args, value = parser.parse_known_args(args=unknown)
 
 			if args.parameter == "all":
-				config.updateAll()
+				config = PipelinesConfig(first_time=True)
 
 			else:
+				config = PipelinesConfig()
 				section, option = args.parameter.split('/')
 				try:
 					config.update(section, option, value)
