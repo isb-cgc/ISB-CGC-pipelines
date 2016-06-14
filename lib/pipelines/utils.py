@@ -1,11 +1,9 @@
 import os
 import sys
-import json
 import pika
 import math
 import string
 import sqlite3
-import MySQLdb
 import requests
 import pyinotify
 import subprocess
@@ -33,6 +31,7 @@ API_HEADERS = {
 	"Content-type": "application/json",
 	"Authorization": "Bearer {access_token}"
 }
+
 
 class PipelinesConfig(SafeConfigParser):
 	def __init__(self, path=None, verify=True):
@@ -90,6 +89,12 @@ class PipelinesConfig(SafeConfigParser):
 				"required": True,
 				"default": False,
 				"message": "Would you like to automatically restart preempted jobs? (Only relevant when submitting jobs with the '--preemptible' flag; default is No) Y/N : "
+			},
+			"db": {
+				"section": "pipelines",
+				"required": True,
+				"default": "sqlite",
+				"message": "Enter the type of database to use (leave blank to use the default 'sqlite'): "
 			},
 			"service_name": {
 				"section": "service",
@@ -337,7 +342,8 @@ class PipelineQueueUtils(object):
 class PipelineDbUtils(object):
 	def __init__(self, config):
 		if config.db == "mysql":
-			self._dbConn = MySQLdb.connect(host=config.db_host, user=config.db_user, passwd=config.db_password, db="pipelines", port=config.db_port)
+			pass  # TODO: determine best production grade relational database to use
+			#self._dbConn = MySQLdb.connect(host=config.db_host, user=config.db_user, passwd=config.db_password, db="pipelines", port=config.db_port)
 		elif config.db == "sqlite":
 			self._dbConn = sqlite3.connect(os.path.join(os.path.dirname(config.path), "isb-cgc-pipelines.db"))
 
