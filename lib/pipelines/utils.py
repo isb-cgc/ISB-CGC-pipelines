@@ -10,7 +10,7 @@ import subprocess
 from time import time, sleep
 from datetime import datetime
 from random import SystemRandom
-from ConfigParser import SafeConfigParser
+from ConfigParser import SafeConfigParser, NoOptionError, NoSectionError
 
 from googleapiclient.errors import HttpError
 
@@ -199,12 +199,20 @@ class PipelinesConfig(SafeConfigParser, object):
 		else:
 			d = {}
 			for name, attrs in self._configParams.iteritems():
-				if not self.has_section(attrs["section"]):
-					raise LookupError("missing required section {s} in the configuration!\nRUN `isb-cgc-pipelines config` to correct the configuration".format(s=attrs["section"]))
+				if attrs["required"]:
+					if not self.has_section(attrs["section"]):
+						raise LookupError("missing required section {s} in the configuration!\nRUN `isb-cgc-pipelines config` to correct the configuration".format(s=attrs["section"]))
 
-				if not self.has_option(attrs["section"], name):
-					raise LookupError("missing required option {o} in section {s}!\nRun `isb-cgc-pipelines config` to correct the configuration".format(s=attrs["section"], o=name))
-				d[name] = self.get(attrs["section"], name)
+					if not self.has_option(attrs["section"], name):
+						raise LookupError("missing required option {o} in section {s}!\nRun `isb-cgc-pipelines config` to correct the configuration".format(s=attrs["section"], o=name))
+
+				try:
+					d[name] = self.get(attrs["section"], name)
+
+				except NoOptionError:
+					pass
+				except NoSectionError:
+					pass
 
 			return d
 
