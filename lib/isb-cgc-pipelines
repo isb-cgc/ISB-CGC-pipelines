@@ -20,7 +20,7 @@ def bootstrap(config):
 		credentials.refresh(http)
 
 	pubsub = discovery.build('pubsub', 'v1', http=http)
-	logging = discovery.build('logging', 'v2', http=http)
+	logging = discovery.build('logging', 'v2beta1', http=http)
 
 	PipelineServiceUtils.bootstrapMessageHandlers(pubsub, logging, config, mode="local")
 
