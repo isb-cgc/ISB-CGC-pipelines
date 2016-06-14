@@ -1039,7 +1039,7 @@ class PipelineServiceUtils:
 	@staticmethod
 	def bootstrapMessageHandlers(pubsub, logging, config, mode="local"):  # TODO: move topics that aren't required to the configuration file
 		# create log sinks for pipeline vm logs
-		timestamp = datetime.datetime.utcnow().isoformat("T") + "Z"  # RFC3339 timestamp
+		timestamp = datetime.utcnow().isoformat("T") + "Z"  # RFC3339 timestamp
 
 		topics = {
 			"pipelineVmInsert": {
