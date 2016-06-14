@@ -2,7 +2,7 @@ import os
 import json
 import pika
 from jsonspec.validators import load  # jsonspec is licensed under BSD
-from utils import PipelineDbUtils
+from utils import PipelineDbUtils, PipelineQueueUtils
 
 
 class PipelineBuilder(object):
@@ -12,13 +12,14 @@ class PipelineBuilder(object):
 		self._config = config
 		self._dependencyMap = {}
 		self._pipelineDbUtils = PipelineDbUtils(self._config)
+		self._pipelineQueueUtils = PipelineQueueUtils()
 
 	def addStep(self, root):  # root must be an instance of PipelineSchema
 		self._dependencyMap[root.name] = root.getSchema()
 
 		self._pipelines.append(self._dependencyMap[root.name])
 
-	def run(self, credentials):
+	def run(self):
 		# generate schema
 		self._generateSchema()
 
@@ -26,7 +27,7 @@ class PipelineBuilder(object):
 		self._validateSchema()
 
 		# initialize job configs
-		self._submitSchema(credentials)
+		self._submitSchema()
 
 	def _generateSchema(self):
 		self._schema.update({"pipelines": self._pipelines})
@@ -100,8 +101,7 @@ class PipelineBuilder(object):
 		except: # what kind of exception?
 			exit(-1)
 
-	def _submitSchema(self, dbCredentials, googleCredentials):
-		# Open a db connection
+	def _submitSchema(self):
 		jobIdMap = {}
 
 		for p in self._schema["pipelines"]:  # Add all jobs to the jobs table 
@@ -120,10 +120,4 @@ class PipelineBuilder(object):
 
 			# if the job is a root job, send the job request to the queue
 			if len(parents) == 0:
-				connection = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
-				channel = connection.channel()
-				channel.queue_declare(queue="WAITING")
-				channel.basic_publish(exchange='', routing_key="WAITING", body=p["request"])
-				connection.close()
-
-		self._pipelineDbUtils.closeConnection()	
+				self._pipelineQueueUtils.publish(json.dumps(p["request"]))

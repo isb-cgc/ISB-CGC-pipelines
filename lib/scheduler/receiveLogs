@@ -4,41 +4,103 @@ import json
 import base64
 import httplib2
 import argparse
+import dateutil
 from apiclient import discovery
 from oauth2client import client as oauth2client
 
-from pipelines.utils import PipelinesConfig
+from pipelines.utils import PipelinesConfig, PipelineDbUtils, PipelineQueueUtils, PipelineSchedulerUtils
 
 PUBSUB_SCOPES = ['https://www.googleapis.com/auth/pubsub']
 
 
 class PubsubMessageHandlers(object):
-
 	@staticmethod
-	def pipelineVmPreempted(log):
-		# get the operation id from the log
+	def pipelineVmLogs(log, compute, genomics, config):
 		# update the status of the job in the jobs db
-		# move the job file to the PREEMPTED queue
-		pass
+		instance = log["jsonPayload"]["resource"]["name"]
+		zone = log["resource"]["labels"]["zone"]
+		operationId = compute.instances().get(project=config.project_id, zone=zone, instance=instance)["description"].partition("Operation: ")[-1]
+		status = genomics.operations().get(name=operationId).execute()
 
+		pipelineDbUtils = PipelineDbUtils(config)
+		pipelineQueueUtils = PipelineQueueUtils()
 
-	@staticmethod
-	def pipelineVmDelete(log):
-		# get the operation id from the log
-		# check the status of the operation
-		# update the status in the jobs db
-		pass
+		processingStart = None
+		processingTime = None
+		for i, e in enumerate(status["metadata"]["events"]):
+			if e["description"] == "running-docker":
+				processingStart = status["metadata"]["events"][i]["startTime"]
+				break
 
+		if processingStart is not None:
+			processingTimeDelta = dateutil.parser.parse(status["metadata"]["endTime"]) - dateutil.parser.parse(
+				processingStart)
+			processingTime = processingTimeDelta.total_seconds()
+
+		jobInfo = pipelineDbUtils.getJobInfo(select=["job_id", "pipeline_name", "tag", "create_time"], where={"operation_id": status["name"]})
+		children = [x[0] for x in pipelineDbUtils.getChildJobs(jobInfo.job_id)]
+
+		if log["jsonPayload"]["event_subtype"] == "compute.instances.preempted":
+			pipelineDbUtils.updateJob(operationId, setValues={"current_status": "PREEMPTED", "end_time": status["metadata"]["endTime"], "processing_time": processingTime})
+
+			if config.restart_preempted:
+				pipelineQueueUtils = PipelineQueueUtils()
+				jobInfo = pipelineDbUtils.getJobInfo(select=["request"], where={"operation_id": operationId})
+				pipelineQueueUtils.publish(jobInfo.request)
+			else:
+				if len(children) > 0:
+					PipelineSchedulerUtils.writeStderr(
+						"Couldn't start downstream jobs for job {j} ({pipeline}-{tag}) : status is PREEMPTED (autorestart is FALSE)".format(
+							j=jobInfo.job_id, pipeline=jobInfo.pipeline_name, tag=jobInfo.tag))
+
+		elif log["jsonPayload"]["event_subtype"] == "compute.instances.delete":
+			if status["done"] and "error" not in status.keys():
+				PipelineSchedulerUtils.writeStdout("PIPELINE SUCCEEDED (pipeline: {pipeline}, tag: {tag}, operation: {operation})".format(pipeline=jobInfo[0].pipeline_name, tag=jobInfo[0].tag, operation=status["name"]))
+				pipelineDbUtils.updateJob(jobInfo.job_id, setValues={"current_status": "SUCCEEDED", "end_time": status["metadata"]["endTime"], "processing_time": processingTime})
+
+				if len(children) > 0:
+					for c in children:
+						parents = [x[0] for x in pipelineDbUtils.getParentJobs(c)]
+						totalParents = len(parents)
+						succeededParents = 1
+						parents.remove(int(jobInfo.job_id))
+
+						for p in parents:
+							status = pipelineDbUtils.getJobInfo(select=["current_status"], where={"job_id": p})[0].current_status
+
+							if status == "SUCCEEDED":
+								succeededParents += 1
+
+							else:
+								break
+
+						if totalParents == succeededParents:
+							childRequest = pipelineDbUtils.getJobInfo(select=["request"], where={"job_id": c})
+							pipelineQueueUtils.publish(childRequest)
+				else:
+					PipelineSchedulerUtils.writeStdout(
+						"Job {jobid} has no child jobs to check!".format(jobid=jobInfo.job_id))
+
+			elif "error" in status.keys():
+				PipelineSchedulerUtils.writeStdout("PIPELINE FAILED ({job}): {reason}".format(job="{pipeline}-{tag}".format(pipeline=jobInfo.pipeline_name, tag=jobInfo.tag), reason=status["error"]["message"]))
+				pipelineDbUtils.updateJob(jobInfo.job_id, setValues={"current_status": "FAILED", "end_time": status["metadata"]["endTime"], "processing_time": processingTime})
+				if len(children) > 0:
+					PipelineSchedulerUtils.writeStderr("Couldn't start downstream jobs for job {j} ({pipeline}-{tag}) : status is FAILED".format(
+							j=jobInfo.job_id, pipeline=jobInfo.pipeline_name, tag=jobInfo.tag))
+							
 
 def main(args, config):
 	credentials = oauth2client.GoogleCredentials.get_application_default()
+
 	if credentials.create_scoped_required():
 		credentials = credentials.create_scoped(PUBSUB_SCOPES)
 
 	http = httplib2.Http()
 	credentials.authorize(http)
 
-	client = discovery.build('pubsub', 'v1', http=http)
+	pubsub = discovery.build('pubsub', 'v1', http=http)
+	compute = discovery.build('compute', 'v1', http=http)
+	genomics = discovery.build('genomics', 'v1alpha2', http=http)
 
 	subscription = 'projects/{project}/subscriptions/{subscription}'.format(project=config.project_id, subscription=args.subscription)
 
@@ -46,9 +108,9 @@ def main(args, config):
 	body = {
 		'returnImmediately': False
 	}
-	while True:
 
-		resp = client.projects().subscriptions().pull(subscription=subscription, body=body).execute()
+	while True:
+		resp = pubsub.projects().subscriptions().pull(subscription=subscription, body=body).execute()
 
 		receivedMessages = resp.get('receivedMessages')
 		if receivedMessages is not None:
@@ -57,19 +119,19 @@ def main(args, config):
 				pubsubMessage = receivedMessage.get('message')
 				if pubsubMessage:
 					log = json.loads(base64.b64decode(str(pubsubMessage.get('data'))))
-					getattr(PubsubMessageHandlers, subscription)(log)
+					PubsubMessageHandlers.pipelineVmLogs(log, compute, config)
 					ackIds.append(receivedMessage.get('ackId'))
 
 			ackBody = {'ackIds': ackIds}
 
 			# Acknowledge the message.
-			client.projects().subscriptions().acknowledge(subscription=subscription, body=ackBody).execute()
+			pubsub.projects().subscriptions().acknowledge(subscription=subscription, body=ackBody).execute()
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--config")
-	parser.add_argument("--subscription")
-	args = parser.parse_args()
 
+	args = parser.parse_args()
 	config = PipelinesConfig(path=args.config)
+
 	main(args, config)

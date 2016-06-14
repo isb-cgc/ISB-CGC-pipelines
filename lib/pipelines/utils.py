@@ -1,9 +1,12 @@
 import os
 import sys
+import json
+import pika
 import math
 import string
-import requests
+import sqlite3
 import MySQLdb
+import requests
 import subprocess
 from time import time, sleep
 from datetime import datetime
@@ -11,6 +14,8 @@ from random import SystemRandom
 from ConfigParser import SafeConfigParser
 
 from googleapiclient.errors import HttpError
+
+MODULE_PATH = "/usr/local/ISB-CGC-pipelines/lib"  # TODO: move path to configuration file
 
 # Kubernetes API Access
 API_ROOT = "http://localhost:8080"
@@ -29,13 +34,18 @@ API_HEADERS = {
 }
 
 class PipelinesConfig(SafeConfigParser):
-	def __init__(self, path=None):
+	def __init__(self, path=None, verify=True):
 		super(PipelinesConfig, self).__init__()
 
 		if path is not None:
 			self.path = path
 		else:
 			self.path = os.path.join(os.environ["HOME"], ".isb-cgc-pipelines", "config")
+
+		try:
+			os.makedirs(self.path)
+		except OSError:
+			pass
 
 		self._configParams = {
 			"projectId": {
@@ -82,25 +92,25 @@ class PipelinesConfig(SafeConfigParser):
 			},
 			"service_name": {
 				"section": "service",
-				"required": True,
+				"required": False,
 				"default": None,
 				"message": "Enter a name for the service deployment: "
 			},
 			"service_zone": {
 				"section": "service",
-				"required": True,
+				"required": False,
 				"default": "us-central1-a",
 				"message": "Enter a zone for the service deployment (leave blank to use default us-central1-a): "
 			},
 			"service_boot_disk_size": {
 				"section": "service",
-				"required": True,
+				"required": False,
 				"default": 100,
 				"message": "Enter the boot disk size for the service cluster nodes, in GB (leave blank to use default 100): "
 			},
 			"service_network": {
 				"section": "service",
-				"required": True,
+				"required": False,
 				"default": "default",
 				"message": "Enter the network to use for the service deployment (leave blank to use the 'default' network): "
 			},
@@ -112,7 +122,7 @@ class PipelinesConfig(SafeConfigParser):
 			},
 			"service_node_count": {
 				"section": "service",
-				"required": True,
+				"required": False,
 				"default": 1,
 				"message": "Enter the number of nodes to use for the service cluster (leave blank to use the default of one node): "
 			},
@@ -130,6 +140,10 @@ class PipelinesConfig(SafeConfigParser):
 			}
 		}
 
+		if verify:
+			self._verify()
+
+	def updateAll(self):
 		for option, attrs in self._configParams.iteritems():
 			if not self.has_section(attrs["section"]):
 				self.add_section(attrs["section"])
@@ -142,14 +156,26 @@ class PipelinesConfig(SafeConfigParser):
 					self.update(attrs["section"], option, val)
 
 	def update(self, section, option, value):
+		if option not in self._configParams.keys():
+			raise ValueError("unrecognized option {s}/{o}".format(s=section, o=option))
+		else:
+			if self._configParams[option]["section"] != section:
+				raise ValueError("unrecognized section {s}".format(s=section))
+
+		if not self.has_section(section):
+			self.add_section(section)
+
 		self.set(section, option, value)
 
 		with open(self.path, 'w') as f:
 			self.write(f)
 
-		self.__dict__.update(self._verifyConfig())
+		self.__dict__.update(self._verify())
 
-	def _verifyConfig(self):
+	def refresh(self):
+		pass
+
+	def _verify(self):
 		try:
 			self.read(self.path)
 		except IOError as e:
@@ -159,18 +185,97 @@ class PipelinesConfig(SafeConfigParser):
 			d = {}
 			for name, attrs in self._configParams.iteritems():
 				if not self.has_section(attrs["section"]):
-					print "ERROR: missing required section {s} in the configuration!\nRUN `isb-cgc-pipelines config` to correct the configuration".format(s=attrs["section"])
-					exit(-1)
+					raise LookupError("missing required section {s} in the configuration!\nRUN `isb-cgc-pipelines config` to correct the configuration".format(s=attrs["section"]))
 
 				if not self.has_option(attrs["section"], name):
-					print "ERROR: missing required option {o} in section {s}!\nRun `isb-cgc-pipelines config` to correct the configuration".format(s=attrs["section"], o=name)
-					exit(-1)
+					raise LookupError("missing required option {o} in section {s}!\nRun `isb-cgc-pipelines config` to correct the configuration".format(s=attrs["section"], o=name))
 				d[name] = self.get(attrs["section"], name)
 
 			return d
 
 
-class PipelineSchedulerUtils(object):		
+class PipelineSchedulerUtils(object):
+	@staticmethod
+	def startScheduler(config):
+		# set up the rabbitmq queues
+		rabbitmqConn = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
+		channel = rabbitmqConn.channel()
+
+		channel.queue_declare(queue='WAIT_Q', durable=True)
+		rabbitmqConn.close()
+
+		pipelineDbUtils = PipelineDbUtils(config)
+		pipelineDbUtils.createJobTables()
+		#pipelineDbUtils.closeConnection()
+
+		c = SafeConfigParser()
+		
+		try:
+			c.readfp(open("/etc/supervisor/supervisord.conf"))
+		except IOError as e:
+			print "ERROR: supervisor config file (/etc/supervisor/supervisord.conf) -- double check your supervisor installation."
+			exit(-1)
+		else:
+			if not c.has_section("program:pipelineJobScheduler"):
+				c.add_section("program:pipelineJobScheduler")
+
+			if not c.has_section("program:pipelinePreemptedLogsHandler"):
+				c.add_section("program:pipelinePreemptedLogsHandler")
+				
+			if not c.has_section("program:pipelineDeleteLogsHandler"):
+				c.add_section("program:pipelineDeleteLogsHandler")
+
+			c.set("program:pipelineJobScheduler", "process_name", "pipelineJobScheduler")
+			c.set("program:pipelineJobScheduler", "command",
+			      "pipelineJobScheduler --config {config}".format(config=config.path))
+			c.set("program:pipelineJobScheduler", "environment",
+			      "PYTHONPATH={modulePath}".format(modulePath=MODULE_PATH))
+			c.set("program:pipelineJobScheduler", "numprocs", "1")
+			c.set("program:pipelineJobScheduler", "autostart", "true")
+			c.set("program:pipelineJobScheduler", "autorestart", "true")
+			c.set("program:pipelineJobScheduler", "user", os.environ["USER"])
+
+			c.set("program:pipelinePreemptedLogsHandler", "process_name", "pipelinePreemptedLogsHandler")
+			c.set("program:pipelinePreemptedLogsHandler", "command",
+			      "pipelinePreemptedLogsHandler --config {config} --subscription pipelineVmPreempted".format(config=config.path))
+			c.set("program:pipelinePreemptedLogsHandler", "environment",
+			      "PYTHONPATH={modulePath}".format(modulePath=MODULE_PATH))
+			c.set("program:pipelinePreemptedLogsHandler", "numprocs", 10)  # TODO: come up with a formula for determining the number of processes
+			c.set("program:pipelinePreemptedLogsHandler", "autostart", "true")
+			c.set("program:pipelinePreemptedLogsHandler", "autorestart", "true")
+			c.set("program:pipelinePreemptedLogsHandler", "user", os.environ["USER"])
+
+			c.set("program:pipelineDeleteLogsHandler", "process_name", "pipelineDeleteLogsHandler")
+			c.set("program:pipelineDeleteLogsHandler", "command",
+			      "pipelineDeleteLogsHandler --config {config} --subscription pipelineVmDelete".format(config=config.path))
+			c.set("program:pipelineDeleteLogsHandler", "environment", "PYTHONPATH={modulePath}".format(modulePath=MODULE_PATH))
+			c.set("program:pipelineDeleteLogsHandler", "numprocs", 10)  # TODO: come up with a formula for determining the number of processes
+			c.set("program:pipelineDeleteLogsHandler", "autostart", "true")
+			c.set("program:pipelineDeleteLogsHandler", "autorestart", "true")
+			c.set("program:pipelineDeleteLogsHandler", "user", os.environ["USER"])
+
+			with open("/etc/supervisor/supervisord.conf", "w") as f:
+				c.write(f)
+
+		try:
+			subprocess.check_call(["sudo", "service", "supervisor", "restart"])
+
+		except subprocess.CalledProcessError as e:
+			print "ERROR: couldn't restart the scheduler (supervisor): {reason}".format(reason=e)
+			exit(-1)
+
+		print "Scheduler started successfully!"
+
+	@staticmethod
+	def stopScheduler():
+		try:
+			subprocess.check_call(["sudo", "service", "supervisor", "stop"])
+
+		except subprocess.CalledProcessError as e:
+			print "ERROR: couldn't stop the scheduler (supervisor): {reason}".format(reason=e)
+			exit(-1)
+
+		print "Scheduler stopped successfully!"
 
 	@staticmethod
 	def writeStdout(s):
@@ -185,37 +290,58 @@ class PipelineSchedulerUtils(object):
 		sys.stderr.flush()
 
 
-class PipelineDbUtils(object):
-	def __init__(self, user, db, password, ip, port):
-		self._mysqlConn = MySQLdb.connect(host=ip, user=user, passwd=password, db=db, port=port)
-		self._pipelinesDb = self._mysqlConn.cursor()
+class PipelineQueueUtils(object):
+	def __init__(self, config):
+		self._connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost'))
+		self._channel = self._connection.channel()
+
+		self._channel.queue_declare(queue='WAIT_Q', durable=True)
 
 	def __del__(self):
-		self._mysqlConn.close()
+		self._connection.close()
+
+	def publish(self, msg):
+		self._channel.basic_publish(exchange='', routing_key="WAIT_Q", body=msg)
+
+	def consume(self):
+		pass
+
+
+class PipelineDbUtils(object):
+	def __init__(self, config):
+		if config.db == "mysql":
+			self._dbConn = MySQLdb.connect(host=config.db_host, user=config.db_user, passwd=config.db_password, db="pipelines", port=config.db_port)
+		elif config.db == "sqlite":
+			self._dbConn = sqlite3.connect(os.path.join(os.path.dirname(config.path), "isb-cgc-pipelines.db"))
+
+		self._pipelinesDb = self._dbConn.cursor()
+
+	def __del__(self):
+		self._dbConn.close()
 
 	def closeConnection(self):
-		self._mysqlConn.close()
+		self._dbConn.close()
 
 	def insertJob(self, *args):  # *args: operationId, pipelineName, tag, currentStatus, preemptions, gcsLogPath, stdoutLog, stderrLog
 		self._pipelinesDb.execute("INSERT INTO jobs (operation_id, pipeline_name, tag, current_status, preemptions, gcs_log_path, stdout_log, stderr_log, create_time, end_time, processing_time, request) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", tuple(args))
-		self._mysqlConn.commit()
+		self._dbConn.commit()
 
 		return self._pipelinesDb.lastrowid
 
 	def insertJobDependency(self, parentId, childId):
 		self._pipelinesDb.execute("INSERT INTO job_dependencies (parent_id, child_id) VALUES (?,?)", (parentId, childId))
-		self._mysqlConn.commit()
+		self._dbConn.commit()
 
-	def updateJob(self, jobId, setValues): # setValues -> dict
+	def updateJob(self, operationId, setValues): # setValues -> dict
 		if "preemptions" in setValues.keys():
-			query = "UPDATE jobs SET preemptions = preemptions + 1 WHERE job_id = ?"
-			self._pipelinesDb.execute(query, (jobId,))
+			query = "UPDATE jobs SET preemptions = preemptions + 1 WHERE operation_id = ?"
+			self._pipelinesDb.execute(query, (operationId,))
 			setValues.pop("preemptions")
 
-		query = "UPDATE jobs SET {values} WHERE job_id = ?".format(values=','.join(["{v} = ?".format(v=v) for v in setValues.iterkeys()]))
+		query = "UPDATE jobs SET {values} WHERE operation_id = ?".format(values=','.join(["{v} = ?".format(v=v) for v in setValues.iterkeys()]))
 
-		self._pipelinesDb.execute(query, tuple(setValues.itervalues()) + (jobId,))
-		self._mysqlConn.commit()
+		self._pipelinesDb.execute(query, tuple(setValues.itervalues()) + (operationId,))
+		self._dbConn.commit()
 
 	def getParentJobs(self, childId):
 		return self._pipelinesDb.execute("SELECT parent_id FROM job_dependencies WHERE child_id = ?", (childId,)).fetchall()
@@ -299,11 +425,11 @@ class PipelineDbUtils(object):
 				'request TEXT)'
 			)
 			self._pipelinesDb.execute()
-			self._mysqlConn.commit()
+			self._dbConn.commit()
 
 		if len(self._pipelinesDb.execute('SELECT name FROM sqlite_master WHERE type="table" AND name="job_dependencies"').fetchall()) == 0:
 			self._pipelinesDb.execute("CREATE TABLE job_dependencies (row_id INTEGER PRIMARY KEY AUTOINCREMENT, parent_id INTEGER, child_id INTEGER)")
-			self._mysqlConn.commit()
+			self._dbConn.commit()
 
 
 class PipelineServiceUtils:
@@ -872,16 +998,56 @@ class PipelineServiceUtils:
 		print "Cluster bootstrap was successful!"
 
 	@staticmethod
-	def bootstrapFunctions(functions, pubsub, logging, http, config):
+	def bootstrapMessageHandlers(pubsub, logging, config, mode="local"):
 		# create the following pubsub topics and functions (according to configuration values):
 		# pipeline-server-logs (not required), pipeline-job-stdout-logs (not required), pipeline-job-stderr-logs (not required),
 		# pipeline-vm-insert (required), pipeline-vm-preempted (required), pipeline-vm-delete (required)
 
 		# TODO: move topics that aren't required to the configuration file
-		triggerPubsub = ['pipelineVmInsert', 'pipelineVmPreempted', 'pipelineVmDelete']
-		triggerHttp = ['pipelineServerLogs', 'pipelineJobStdoutLogs', 'pipelineJobStderrLogs', ]
 
-		for t in triggerPubsub:
+		# create log sinks for pipeline vm logs
+		timestamp = datetime.datetime.utcnow().isoformat("T") + "Z"  # RFC3339 timestamp
+
+		topics = {
+			"pipelineVmInsert": {
+				"filter": ('resource.type="gce_instance" AND '
+						'timestamp > {tz} AND jsonPayload.resource.name:"ggp-" AND '
+						'jsonPayload.event_subtype="compute.instances.insert" AND '
+						'NOT error AND logName="projects/{project}/logs/compute.googleapis.com%2Factivity_log"'
+				).format(project=config.project_id, tz=timestamp),
+				"trigger": "topic"
+			},
+			"pipelineVmPreempted": {
+				"filter": ('resource.type="gce_instance" AND '
+						'timestamp > {tz} AND jsonPayload.resource.name:"ggp-" AND '
+						'jsonPayload.event_subtype="compute.instances.delete" AND '
+						'NOT error AND logName="projects/{project}/logs/compute.googleapis.com%2Factivity_log"'
+				).format(project=config.project_id, tz=timestamp),
+				"trigger": "topic"
+			},
+			"pipelineVmDelete": {
+				"filter": ('resource.type="gce_instance" AND '
+						'timestamp > {tz} AND jsonPayload.resource.name:"ggp-" AND '
+						'jsonPayload.event_subtype="compute.instances.preempted" AND '
+						'NOT error AND logName="projects/{project}/logs/compute.googleapis.com%2Factivity_log"'
+				).format(project=config.project_id, tz=timestamp),
+				"trigger": "topic",
+			},
+			"pipelineServerLogs": {  # TODO: implement additional log collection
+				"filter": "",
+				"trigger": "http"
+			},
+			"pipelineJobStdoutLogs": {
+				"filter": "",
+				"trigger": "http"
+			},
+			"pipelineJobStderrLogs": {
+				"filter": "",
+				"trigger": "http"
+			}
+		}
+
+		for t, v in topics.iteritems():
 			try:
 				pubsub.projects().topics().get().execute(topic={"name": t})
 			except HttpError as e:
@@ -890,64 +1056,25 @@ class PipelineServiceUtils:
 				except HttpError as e:
 					print "ERROR: couldn't create pubsub topic {t} : {reason}".format(t=t, reason=e)
 					exit(-1)
-			else:
-				try:
-					subprocess.check_call(["gcloud", "alpha", "functions", "deploy", t, "--bucket", config.service_callbacks, "--trigger-topic", t])
-					# TODO: polling ?
-				except subprocess.CalledProcessError as e:
-					print e
+				else:
+					body = {
+						"destination": "googleapis.com/auth/pubsub/projects/{project}/topics/{t}".format(project=config.project_id, t=t),
+						"filter": v["filter"]
+					}
+					try:
+						logging.projects().sinks().create(projectName=config.project_id, body=body).execute()
+					except HttpError as e:
+						print "ERROR: couldn't create the pipelineVmInsert log sink : {reason}".format(reason=e)
+						exit(-1)
 
-		for t in triggerHttp:
-			try:
-				subprocess.check_call(
-					["gcloud", "alpha", "functions", "deploy", t, "--bucket", config.service_callbacks, "--trigger-http", t])
-				# TODO: polling ?
-			except subprocess.CalledProcessError as e:
-				print e
+		print "Messaging bootstrap successful!"
 
-		# create log sinks for pipeline vm logs
-		timestamp = datetime.datetime.utcnow().isoformat("T") + "Z"  # RFC3339 timestamp
+		if mode == "local":
+			# start the job scheduler/monitor processes locally (supervisor)
+			PipelineSchedulerUtils.startScheduler(config)
 
-		pipelineInsertBody = {
-			"destination": "googleapis.com/auth/pubsub/projects/{project}/topics/pipelineVmInsert".format(project=config.project_id),
-			"filter": "resource.type=\"gce_instance\" AND timestamp > {tz} AND jsonPayload.resource.name:\"ggp-\" AND jsonPayload.event_subtype=\"compute.instances.insert\" AND NOT error AND logName=\"projects/{project}/logs/compute.googleapis.com%2Factivity_log\"".format(
-				project=config.project_id, tz=timestamp)
-		}
-		try:
-			logging.projects().sinks().create(projectName=config.project_id, body=pipelineInsertBody).execute()
-		except HttpError as e:
-			print "ERROR: couldn't create the pipelineVmInsert log sink : {reason}".format(reason=e)
-			exit(-1)
-
-		pipelineDeleteBody = {
-			"destination": "googleapis.com/auth/pubsub/projects/{project}/topics/pipelineVmDelete".format(
-				project=config.project_id),
-			"filter": "resource.type=\"gce_instance\" AND timestamp > {tz} AND jsonPayload.resource.name:\"ggp-\" AND jsonPayload.event_subtype=\"compute.instances.delete\" AND NOT error AND logName=\"projects/{project}/logs/compute.googleapis.com%2Factivity_log\"".format(
-				project=config.project_id, tz=timestamp)
-		}
-		try:
-			logging.projects().sinks().create(projectName=config.project_id, body=pipelineDeleteBody).execute()
-		except HttpError as e:
-			print "ERROR: couldn't create the pipelineVmDelete log sink : {reason}".format(reason=e)
-			exit(-1)
-
-		pipelineInsertBody = {
-			"destination": "googleapis.com/auth/pubsub/projects/{project}/topics/pipelineVmPreempted".format(
-				project=config.project_id),
-			"filter": "resource.type=\"gce_instance\" AND timestamp > {tz} AND jsonPayload.resource.name:\"ggp-\" AND jsonPayload.event_subtype=\"compute.instances.preempted\" AND NOT error AND logName=\"projects/{project}/logs/compute.googleapis.com%2Factivity_log\"".format(
-				project=config.project_id, tz=timestamp)
-		}
-		try:
-			logging.projects().sinks().create(projectName=config.project_id, body=pipelineInsertBody).execute()
-		except HttpError as e:
-			print "ERROR: couldn't create the pipelineVmPreempted log sink : {reason}".format(reason=e)
-			exit(-1)
-
-		print "Cloud Functions bootstrap successful!"
-
-	@staticmethod
-	def bootstrapPubSub():
-		pass
+		if mode == "server":
+			pass  # start the job scheduler/monitor pods (k8s)
 
 
 class DataUtils(object):
