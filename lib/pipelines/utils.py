@@ -188,7 +188,7 @@ class PipelinesConfig(SafeConfigParser, object):
 		jobStatusNotifier.loop()
 
 	def refresh(self):
-		self.__dict__.update(self._verify(self))
+		self.__dict__.update(self._verify())
 
 	def _verify(self):
 		try:
