@@ -1042,7 +1042,7 @@ class PipelineServiceUtils:
 		timestamp = datetime.utcnow().isoformat("T") + "Z"  # RFC3339 timestamp
 
 		topics = {
-			"projects/{project}/topics/pipelineVmInsert".format(project=config.project_id): {
+			"pipelineVmInsert": {
 				"filter": ('resource.type="gce_instance" AND '
 						'timestamp > {tz} AND jsonPayload.resource.name:"ggp-" AND '
 						'jsonPayload.event_subtype="compute.instances.insert" AND '
@@ -1050,7 +1050,7 @@ class PipelineServiceUtils:
 				).format(project=config.project_id, tz=timestamp),
 				"trigger": "topic"
 			},
-			"projects/{project}/topics/pipelineVmPreempted".format(project=config.project_id): {
+			"pipelineVmPreempted": {
 				"filter": ('resource.type="gce_instance" AND '
 						'timestamp > {tz} AND jsonPayload.resource.name:"ggp-" AND '
 						'jsonPayload.event_subtype="compute.instances.delete" AND '
@@ -1058,7 +1058,7 @@ class PipelineServiceUtils:
 				).format(project=config.project_id, tz=timestamp),
 				"trigger": "topic"
 			},
-			"projects/{project}/topics/pipelineVmDelete".format(project=config.project_id): {
+			"pipelineVmDelete": {
 				"filter": ('resource.type="gce_instance" AND '
 						'timestamp > {tz} AND jsonPayload.resource.name:"ggp-" AND '
 						'jsonPayload.event_subtype="compute.instances.preempted" AND '
@@ -1083,7 +1083,7 @@ class PipelineServiceUtils:
 		for t, v in topics.iteritems():
 			print t
 			try:
-				pubsub.projects().topics().get(topic={"name": t}).execute()
+				pubsub.projects().topics().get(topic={"name": "projects/{project}/topics/{t}".format(project=config.project_id, t=t)}).execute()
 			except HttpError as e:
 				try:
 					pubsub.projects().topics().create(name=t, body={"name": t}).execute()
