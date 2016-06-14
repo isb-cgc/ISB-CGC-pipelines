@@ -1042,7 +1042,7 @@ class PipelineServiceUtils:
 		timestamp = datetime.utcnow().isoformat("T") + "Z"  # RFC3339 timestamp
 
 		topics = {
-			"pipelineVmInsert": {
+			"projects/{project}/topics/pipelineVmInsert".format(project=config.project_id): {
 				"filter": ('resource.type="gce_instance" AND '
 						'timestamp > {tz} AND jsonPayload.resource.name:"ggp-" AND '
 						'jsonPayload.event_subtype="compute.instances.insert" AND '
@@ -1050,7 +1050,7 @@ class PipelineServiceUtils:
 				).format(project=config.project_id, tz=timestamp),
 				"trigger": "topic"
 			},
-			"pipelineVmPreempted": {
+			"projects/{project}/topics/pipelineVmPreempted".format(project=config.project_id): {
 				"filter": ('resource.type="gce_instance" AND '
 						'timestamp > {tz} AND jsonPayload.resource.name:"ggp-" AND '
 						'jsonPayload.event_subtype="compute.instances.delete" AND '
@@ -1058,7 +1058,7 @@ class PipelineServiceUtils:
 				).format(project=config.project_id, tz=timestamp),
 				"trigger": "topic"
 			},
-			"pipelineVmDelete": {
+			"projects/{project}/topics/pipelineVmDelete".format(project=config.project_id): {
 				"filter": ('resource.type="gce_instance" AND '
 						'timestamp > {tz} AND jsonPayload.resource.name:"ggp-" AND '
 						'jsonPayload.event_subtype="compute.instances.preempted" AND '
