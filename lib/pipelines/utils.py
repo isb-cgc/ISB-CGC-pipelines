@@ -7,6 +7,7 @@ import string
 import sqlite3
 import MySQLdb
 import requests
+import pyinotify
 import subprocess
 from time import time, sleep
 from datetime import datetime
@@ -170,10 +171,19 @@ class PipelinesConfig(SafeConfigParser):
 		with open(self.path, 'w') as f:
 			self.write(f)
 
-		self.__dict__.update(self._verify())
+		self.refresh()
+
+	def watch(self):
+		# watch changes to the config file -- needs to be run in a separate thread
+		jobStatusManager = pyinotify.WatchManager()
+		jobStatusNotifier = pyinotify.Notifier(jobStatusManager)
+
+		jobStatusManager.add_watch(self.path, pyinotify.IN_CLOSE_WRITE, proc_fun=PipelinesConfigUpdateHandler(config=self))
+
+		jobStatusNotifier.loop()
 
 	def refresh(self):
-		pass
+		self.__dict__.update(self._verify(self))
 
 	def _verify(self):
 		try:
@@ -193,6 +203,14 @@ class PipelinesConfig(SafeConfigParser):
 
 			return d
 
+
+class PipelinesConfigUpdateHandler(pyinotify.ProcessEvent):
+	def my_init(self, config=None):  # config -> PipelinesConfig
+		self._config = config
+
+	def process_IN_CLOSE_WRITE(self, event):
+		PipelineSchedulerUtils.writeStdout("Refreshing configuration ...")
+		self._config.refresh()
 
 class PipelineSchedulerUtils(object):
 	@staticmethod
@@ -237,7 +255,7 @@ class PipelineSchedulerUtils(object):
 
 			c.set("program:pipelinePreemptedLogsHandler", "process_name", "pipelinePreemptedLogsHandler")
 			c.set("program:pipelinePreemptedLogsHandler", "command",
-			      "pipelinePreemptedLogsHandler --config {config} --subscription pipelineVmPreempted".format(config=config.path))
+			      "receivePipelineVmLogs --config {config} --subscription pipelineVmPreempted".format(config=config.path))
 			c.set("program:pipelinePreemptedLogsHandler", "environment",
 			      "PYTHONPATH={modulePath}".format(modulePath=MODULE_PATH))
 			c.set("program:pipelinePreemptedLogsHandler", "numprocs", 10)  # TODO: come up with a formula for determining the number of processes
@@ -247,7 +265,7 @@ class PipelineSchedulerUtils(object):
 
 			c.set("program:pipelineDeleteLogsHandler", "process_name", "pipelineDeleteLogsHandler")
 			c.set("program:pipelineDeleteLogsHandler", "command",
-			      "pipelineDeleteLogsHandler --config {config} --subscription pipelineVmDelete".format(config=config.path))
+			      "receivePipelineVmLogs --config {config} --subscription pipelineVmDelete".format(config=config.path))
 			c.set("program:pipelineDeleteLogsHandler", "environment", "PYTHONPATH={modulePath}".format(modulePath=MODULE_PATH))
 			c.set("program:pipelineDeleteLogsHandler", "numprocs", 10)  # TODO: come up with a formula for determining the number of processes
 			c.set("program:pipelineDeleteLogsHandler", "autostart", "true")
@@ -294,7 +312,6 @@ class PipelineQueueUtils(object):
 	def __init__(self, config):
 		self._connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost'))
 		self._channel = self._connection.channel()
-
 		self._channel.queue_declare(queue='WAIT_Q', durable=True)
 
 	def __del__(self):
@@ -303,8 +320,26 @@ class PipelineQueueUtils(object):
 	def publish(self, msg):
 		self._channel.basic_publish(exchange='', routing_key="WAIT_Q", body=msg)
 
-	def consume(self):
-		pass
+	def get(self):
+		self._channel.basic_qos(prefetch_count=1)
+		method, header, body = self._channel.basic_get('WAIT_Q')
+
+		return body, method
+
+	def acknowledge(self, method):
+		if method:
+			self._channel.basic_ack(method.delivery_tag)
+		else:
+			PipelineSchedulerUtils.writeStdout("No message returned!")
+
+	def _processMsg(self, channel, method, header, body, **kwargs):
+		for k,v in kwargs.iteritems():
+			requested = body[k]
+			if v - requested > 0:
+				pass # submit the job, update the jobs db, and send acknowledgement
+			else:
+				PipelineSchedulerUtils.writeStdout("Requeuing job {j} (): waiting for resource {k}".format(j="", k=k))
+				pass  # requeue job
 
 
 class PipelineDbUtils(object):
@@ -332,15 +367,15 @@ class PipelineDbUtils(object):
 		self._pipelinesDb.execute("INSERT INTO job_dependencies (parent_id, child_id) VALUES (?,?)", (parentId, childId))
 		self._dbConn.commit()
 
-	def updateJob(self, operationId, setValues): # setValues -> dict
+	def updateJob(self, key, setValues, keyName="operation_id"): # setValues -> dict
 		if "preemptions" in setValues.keys():
-			query = "UPDATE jobs SET preemptions = preemptions + 1 WHERE operation_id = ?"
-			self._pipelinesDb.execute(query, (operationId,))
+			query = "UPDATE jobs SET preemptions = preemptions + 1 WHERE {key} = ?".format(key=keyName)
+			self._pipelinesDb.execute(query, (key,))
 			setValues.pop("preemptions")
 
-		query = "UPDATE jobs SET {values} WHERE operation_id = ?".format(values=','.join(["{v} = ?".format(v=v) for v in setValues.iterkeys()]))
+		query = "UPDATE jobs SET {values} WHERE {key} = ?".format(key=keyName, values=','.join(["{v} = ?".format(v=v) for v in setValues.iterkeys()]))
 
-		self._pipelinesDb.execute(query, tuple(setValues.itervalues()) + (operationId,))
+		self._pipelinesDb.execute(query, tuple(setValues.itervalues()) + (key,))
 		self._dbConn.commit()
 
 	def getParentJobs(self, childId):

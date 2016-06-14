@@ -25,6 +25,7 @@ class PubsubMessageHandlers(object):
 		pipelineDbUtils = PipelineDbUtils(config)
 		pipelineQueueUtils = PipelineQueueUtils()
 
+		# get the total processing time of the job
 		processingStart = None
 		processingTime = None
 		for i, e in enumerate(status["metadata"]["events"]):
@@ -110,6 +111,9 @@ def main(args, config):
 	}
 
 	while True:
+		if credentials.access_token_expired:
+			credentials.refresh(http)
+
 		resp = pubsub.projects().subscriptions().pull(subscription=subscription, body=body).execute()
 
 		receivedMessages = resp.get('receivedMessages')
@@ -119,7 +123,7 @@ def main(args, config):
 				pubsubMessage = receivedMessage.get('message')
 				if pubsubMessage:
 					log = json.loads(base64.b64decode(str(pubsubMessage.get('data'))))
-					PubsubMessageHandlers.pipelineVmLogs(log, compute, config)
+					PubsubMessageHandlers.pipelineVmLogs(log, compute, genomics, config)
 					ackIds.append(receivedMessage.get('ackId'))
 
 			ackBody = {'ackIds': ackIds}
@@ -130,6 +134,7 @@ def main(args, config):
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--config")
+	parser.add_argument("--subscription")
 
 	args = parser.parse_args()
 	config = PipelinesConfig(path=args.config)

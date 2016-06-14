@@ -11,7 +11,7 @@ from googleapiclient import discovery
 from oauth2client.client import GoogleCredentials
 
 
-def deployService(args, config):  #TODO: reimplement
+def deployService(args, config):
 	try:
 		subprocess.check_call(["gsutil", "ls", args.bucket])
 	except subprocess.CalledProcessError as e:

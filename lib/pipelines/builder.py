@@ -116,8 +116,13 @@ class PipelineBuilder(object):
 
 		for p in self._schema["pipelines"]:  # schedule pipelines
 			parents = self._pipelineDbUtils.getParentJobs(jobIdMap[p["name"]])
-			self._pipelineDbUtils.updateJob(jobIdMap[p["name"]], setValues={"current_status": "WAITING"})
+			self._pipelineDbUtils.updateJob(jobIdMap[p["name"]], setValues={"current_status": "WAITING"}, keyName="job_id")
 
 			# if the job is a root job, send the job request to the queue
+			msg = {
+				"job_id": jobIdMap[p["name"]],
+				"request": p["request"]
+			}
+
 			if len(parents) == 0:
-				self._pipelineQueueUtils.publish(json.dumps(p["request"]))
+				self._pipelineQueueUtils.publish(json.dumps(msg))
