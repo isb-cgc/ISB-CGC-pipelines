@@ -11,12 +11,7 @@ from pipelines.builder import PipelineBuilder
 from pipelines.utils import PipelinesConfig, PipelineDbUtils, PipelineServiceUtils, PipelineSchedulerUtils
 
 
-def deployService(args, config):
-	try:
-		subprocess.check_call(["gsutil", "ls", args.bucket])
-	except subprocess.CalledProcessError as e:
-		print "ERROR: there was a problem deploying cloud functions to bucket {bucket} : {reason}".format(bucket=args.bucket, reason=e)
-		exit(-1)
+def bootstrap(config):
 
 	# API service objects
 	credentials = GoogleCredentials.get_application_default()
@@ -28,6 +23,7 @@ def deployService(args, config):
 	logging = discovery.build('logging', 'v2', http=http)
 
 	PipelineServiceUtils.bootstrapMessageHandlers(pubsub, logging, config, mode="local")
+
 
 def submitPipeline(args, config):
 
@@ -189,9 +185,9 @@ def getJobsList(args, unknown, config):  # TODO: reimplement
 		print "No jobs found"
 
 def main(args, unknown):
-	if args.subcommand == "deploy":
+	if args.subcommand == "bootstrap":
 		config = PipelinesConfig()
-		deployService(args, config)
+		bootstrap(config)
 
 	elif args.subcommand == "scheduler":
 		config = PipelinesConfig()
@@ -253,7 +249,7 @@ if __name__ == "__main__":
 	parser = argparse.ArgumentParser(description="")
 	subparsers = parser.add_subparsers(dest="subcommand")
 
-	deploy = subparsers.add_parser("deploy")
+	deploy = subparsers.add_parser("bootstrap")
 
 	scheduler = subparsers.add_parser("scheduler")
 	scheduler.add_argument("schedulerOperation", choices=["start", "stop"])
