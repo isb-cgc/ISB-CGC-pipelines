@@ -48,7 +48,7 @@ class PipelinesConfig(SafeConfigParser, object):
 			pass
 
 		self._configParams = {
-			"projectId": {
+			"project_id": {
 				"section": "gcp",
 				"required": True,
 				"default": None,
