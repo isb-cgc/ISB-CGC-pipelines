@@ -43,7 +43,7 @@ class PipelinesConfig(SafeConfigParser, object):
 			self.path = os.path.join(os.environ["HOME"], ".isb-cgc-pipelines", "config")
 
 		try:
-			os.makedirs(self.path)
+			os.makedirs(os.path.dirname(self.path))
 		except OSError:
 			pass
 
