@@ -212,6 +212,7 @@ class PipelinesConfigUpdateHandler(pyinotify.ProcessEvent):
 		PipelineSchedulerUtils.writeStdout("Refreshing configuration ...")
 		self._config.refresh()
 
+
 class PipelineSchedulerUtils(object):
 	@staticmethod
 	def startScheduler(config):
@@ -332,15 +333,6 @@ class PipelineQueueUtils(object):
 		else:
 			PipelineSchedulerUtils.writeStdout("No message returned!")
 
-	def _processMsg(self, channel, method, header, body, **kwargs):
-		for k,v in kwargs.iteritems():
-			requested = body[k]
-			if v - requested > 0:
-				pass # submit the job, update the jobs db, and send acknowledgement
-			else:
-				PipelineSchedulerUtils.writeStdout("Requeuing job {j} (): waiting for resource {k}".format(j="", k=k))
-				pass  # requeue job
-
 
 class PipelineDbUtils(object):
 	def __init__(self, config):
@@ -357,7 +349,7 @@ class PipelineDbUtils(object):
 	def closeConnection(self):
 		self._dbConn.close()
 
-	def insertJob(self, *args):  # *args: operationId, pipelineName, tag, currentStatus, preemptions, gcsLogPath, stdoutLog, stderrLog
+	def insertJob(self, *args):
 		self._pipelinesDb.execute("INSERT INTO jobs (operation_id, pipeline_name, tag, current_status, preemptions, gcs_log_path, stdout_log, stderr_log, create_time, end_time, processing_time, request) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", tuple(args))
 		self._dbConn.commit()
 
@@ -367,7 +359,7 @@ class PipelineDbUtils(object):
 		self._pipelinesDb.execute("INSERT INTO job_dependencies (parent_id, child_id) VALUES (?,?)", (parentId, childId))
 		self._dbConn.commit()
 
-	def updateJob(self, key, setValues, keyName="operation_id"): # setValues -> dict
+	def updateJob(self, key, setValues, keyName="operation_id"):  # setValues -> dict
 		if "preemptions" in setValues.keys():
 			query = "UPDATE jobs SET preemptions = preemptions + 1 WHERE {key} = ?".format(key=keyName)
 			self._pipelinesDb.execute(query, (key,))
@@ -1033,13 +1025,7 @@ class PipelineServiceUtils:
 		print "Cluster bootstrap was successful!"
 
 	@staticmethod
-	def bootstrapMessageHandlers(pubsub, logging, config, mode="local"):
-		# create the following pubsub topics and functions (according to configuration values):
-		# pipeline-server-logs (not required), pipeline-job-stdout-logs (not required), pipeline-job-stderr-logs (not required),
-		# pipeline-vm-insert (required), pipeline-vm-preempted (required), pipeline-vm-delete (required)
-
-		# TODO: move topics that aren't required to the configuration file
-
+	def bootstrapMessageHandlers(pubsub, logging, config, mode="local"):  # TODO: move topics that aren't required to the configuration file
 		# create log sinks for pipeline vm logs
 		timestamp = datetime.datetime.utcnow().isoformat("T") + "Z"  # RFC3339 timestamp
 
@@ -1067,19 +1053,19 @@ class PipelineServiceUtils:
 						'NOT error AND logName="projects/{project}/logs/compute.googleapis.com%2Factivity_log"'
 				).format(project=config.project_id, tz=timestamp),
 				"trigger": "topic",
-			},
-			"pipelineServerLogs": {  # TODO: implement additional log collection
-				"filter": "",
-				"trigger": "http"
-			},
-			"pipelineJobStdoutLogs": {
-				"filter": "",
-				"trigger": "http"
-			},
-			"pipelineJobStderrLogs": {
-				"filter": "",
-				"trigger": "http"
 			}
+			#"pipelineServerLogs": {  # TODO: possibly implement additional log collection
+			#	"filter": "",
+			#	"trigger": "http"
+			#},
+			#"pipelineJobStdoutLogs": {
+			#	"filter": "",
+			#	"trigger": "http"
+			#},
+			#"pipelineJobStderrLogs": {
+			#	"filter": "",
+			#	"trigger": "http"
+			#}
 		}
 
 		for t, v in topics.iteritems():
@@ -1103,13 +1089,6 @@ class PipelineServiceUtils:
 						exit(-1)
 
 		print "Messaging bootstrap successful!"
-
-		if mode == "local":
-			# start the job scheduler/monitor processes locally (supervisor)
-			PipelineSchedulerUtils.startScheduler(config)
-
-		if mode == "server":
-			pass  # start the job scheduler/monitor pods (k8s)
 
 
 class DataUtils(object):

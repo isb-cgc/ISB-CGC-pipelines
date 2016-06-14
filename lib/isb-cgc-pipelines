@@ -4,11 +4,11 @@ import shutil
 import argparse
 import httplib2
 import subprocess
-from pipelines.schema import PipelineSchema
-from pipelines.builder import PipelineBuilder
-from pipelines.utils import PipelinesConfig, PipelineDbUtils, PipelineServiceUtils
 from googleapiclient import discovery
 from oauth2client.client import GoogleCredentials
+from pipelines.schema import PipelineSchema
+from pipelines.builder import PipelineBuilder
+from pipelines.utils import PipelinesConfig, PipelineDbUtils, PipelineServiceUtils, PipelineSchedulerUtils
 
 
 def deployService(args, config):
@@ -193,6 +193,17 @@ def main(args, unknown):
 		config = PipelinesConfig()
 		deployService(args, config)
 
+	elif args.subcommand == "scheduler":
+		config = PipelinesConfig(PIPELINES_CONFIG_PATH)
+
+		if args.schedulerOperation == "stop":
+			PipelineSchedulerUtils.stopScheduler(args, unknown, config)
+		elif args.schedulerOperation == "start":
+			PipelineSchedulerUtils.startScheduler(args, unknown, config)
+		else:
+			print "ERROR: unrecognized option {o}".format(o=args.startOrStop)
+			exit(-1)
+
 	if args.subcommand == "submit":
 		config = PipelinesConfig()
 		submitPipeline(args, config)
@@ -244,8 +255,9 @@ if __name__ == "__main__":
 	subparsers = parser.add_subparsers(dest="subcommand")
 
 	deploy = subparsers.add_parser("deploy")
-	deploy.add_argument("--name", required=True)
-	deploy.add_argument("--bucket", required=True)
+
+	scheduler = subparsers.add_parser("scheduler")
+	scheduler.add_argument("schedulerOperation", choices=["start", "stop"])
 
 	submit = subparsers.add_parser("submit", conflict_handler="resolve")
 	submit.add_argument("--pipelineName", required=True)
