@@ -194,7 +194,7 @@ def main(args, unknown):
 		deployService(args, config)
 
 	elif args.subcommand == "scheduler":
-		config = PipelinesConfig(PIPELINES_CONFIG_PATH)
+		config = PipelinesConfig()
 
 		if args.schedulerOperation == "stop":
 			PipelineSchedulerUtils.stopScheduler(args, unknown, config)

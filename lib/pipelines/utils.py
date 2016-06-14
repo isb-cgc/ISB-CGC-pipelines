@@ -170,7 +170,7 @@ class PipelinesConfig(SafeConfigParser, object):
 		if not self.has_section(section):
 			self.add_section(section)
 
-		self.set(section, option, value)
+		self.set(section, str(option), str(value))
 
 		with open(self.path, 'w') as f:
 			self.write(f)
