@@ -33,7 +33,7 @@ API_HEADERS = {
 }
 
 
-class PipelinesConfig(SafeConfigParser):
+class PipelinesConfig(SafeConfigParser, object):
 	def __init__(self, path=None, verify=True):
 		super(PipelinesConfig, self).__init__()
 
