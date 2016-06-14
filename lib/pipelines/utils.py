@@ -1080,7 +1080,8 @@ class PipelineServiceUtils:
 			#}
 		}
 
-		for t, v in topics.iteritems():
+		for t, v in topics.iteritems()
+			print t
 			try:
 				pubsub.projects().topics().get(topic={"name": t}).execute()
 			except HttpError as e:
