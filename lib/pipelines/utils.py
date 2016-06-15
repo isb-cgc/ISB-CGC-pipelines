@@ -1097,7 +1097,7 @@ class PipelineServiceUtils:
 					"name": subscription
 				}
 				try:
-					pubsub.projects().subscriptions().create(name=subscription, body=body)
+					pubsub.projects().subscriptions().create(name=subscription, body=body).execute()
 				except HttpError as e:
 					print "ERROR: couldn't create pubsub subscription {s}: {reason}".format(s=subscription, reaosn=e)
 					exit(-1)
