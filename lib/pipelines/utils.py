@@ -270,7 +270,7 @@ class PipelineSchedulerUtils(object):
 			      "receivePipelineVmLogs --config {config} --subscription pipelineVmPreempted".format(config=config.path))
 			c.set("program:pipelinePreemptedLogsHandler", "environment",
 			      "PYTHONPATH={modulePath}".format(modulePath=MODULE_PATH))
-			c.set("program:pipelinePreemptedLogsHandler", "numprocs", 10)  # TODO: come up with a formula for determining the number of processes
+			c.set("program:pipelinePreemptedLogsHandler", "numprocs", "10")  # TODO: come up with a formula for determining the number of processes
 			c.set("program:pipelinePreemptedLogsHandler", "autostart", "true")
 			c.set("program:pipelinePreemptedLogsHandler", "autorestart", "true")
 			c.set("program:pipelinePreemptedLogsHandler", "user", os.environ["USER"])
@@ -279,7 +279,7 @@ class PipelineSchedulerUtils(object):
 			c.set("program:pipelineDeleteLogsHandler", "command",
 			      "receivePipelineVmLogs --config {config} --subscription pipelineVmDelete".format(config=config.path))
 			c.set("program:pipelineDeleteLogsHandler", "environment", "PYTHONPATH={modulePath}".format(modulePath=MODULE_PATH))
-			c.set("program:pipelineDeleteLogsHandler", "numprocs", 10)  # TODO: come up with a formula for determining the number of processes
+			c.set("program:pipelineDeleteLogsHandler", "numprocs", "10")  # TODO: come up with a formula for determining the number of processes
 			c.set("program:pipelineDeleteLogsHandler", "autostart", "true")
 			c.set("program:pipelineDeleteLogsHandler", "autorestart", "true")
 			c.set("program:pipelineDeleteLogsHandler", "user", os.environ["USER"])
