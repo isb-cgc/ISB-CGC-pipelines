@@ -265,7 +265,7 @@ class PipelineSchedulerUtils(object):
 			c.set("program:pipelineJobScheduler", "autorestart", "true")
 			c.set("program:pipelineJobScheduler", "user", os.environ["USER"])
 
-			c.set("program:pipelinePreemptedLogsHandler", "process_name", "pipelinePreemptedLogsHandler")
+			c.set("program:pipelinePreemptedLogsHandler", "process_name", "%(program_name)s_%(process_num)")
 			c.set("program:pipelinePreemptedLogsHandler", "command",
 			      "receivePipelineVmLogs --config {config} --subscription pipelineVmPreempted".format(config=config.path))
 			c.set("program:pipelinePreemptedLogsHandler", "environment",
@@ -275,7 +275,7 @@ class PipelineSchedulerUtils(object):
 			c.set("program:pipelinePreemptedLogsHandler", "autorestart", "true")
 			c.set("program:pipelinePreemptedLogsHandler", "user", os.environ["USER"])
 
-			c.set("program:pipelineDeleteLogsHandler", "process_name", "pipelineDeleteLogsHandler")
+			c.set("program:pipelineDeleteLogsHandler", "process_name", "%(program_name)s_%(process_num)")
 			c.set("program:pipelineDeleteLogsHandler", "command",
 			      "receivePipelineVmLogs --config {config} --subscription pipelineVmDelete".format(config=config.path))
 			c.set("program:pipelineDeleteLogsHandler", "environment", "PYTHONPATH={modulePath}".format(modulePath=MODULE_PATH))
