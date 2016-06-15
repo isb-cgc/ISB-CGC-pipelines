@@ -265,7 +265,7 @@ class PipelineSchedulerUtils(object):
 			c.set("program:pipelineJobScheduler", "autorestart", "true")
 			c.set("program:pipelineJobScheduler", "user", os.environ["USER"])
 
-			c.set("program:pipelinePreemptedLogsHandler", "process_name", "%(program_name)s_%(process_num)")
+			c.set("program:pipelinePreemptedLogsHandler", "process_name", "%(program_name)s_%(process_num)s")
 			c.set("program:pipelinePreemptedLogsHandler", "command",
 			      "receivePipelineVmLogs --config {config} --subscription pipelineVmPreempted".format(config=config.path))
 			c.set("program:pipelinePreemptedLogsHandler", "environment",
