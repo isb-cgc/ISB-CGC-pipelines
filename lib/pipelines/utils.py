@@ -34,13 +34,10 @@ API_HEADERS = {
 
 
 class PipelinesConfig(SafeConfigParser, object):
-	def __init__(self, path=None, first_time=False):
+	def __init__(self, path, first_time=False):
 		super(PipelinesConfig, self).__init__()
 
-		if path is not None:
-			self.path = path
-		else:
-			self.path = os.path.join(os.environ["HOME"], ".isb-cgc-pipelines", "config")
+		self.path = path
 
 		try:
 			os.makedirs(os.path.dirname(self.path))
@@ -75,7 +72,7 @@ class PipelinesConfig(SafeConfigParser, object):
 			"pipelines_home": {  # TODO: get rid of this parameter (no longer need it)
 				"section": "pipelines",
 				"required": True,
-				"default": os.path.join(os.environ["HOME"], ".isb-cgc-pipelines/pipelines"),
+				"default": os.path.join(os.path.dirname(self.path), "pipelines"),
 				"message": "Enter a path for the ISB-CGC Pipelines job directory (leave blank to use ~/.isb-cgc-pipelines/pipelines by default): "
 			},
 			"max_running_jobs": {
@@ -192,7 +189,7 @@ class PipelinesConfig(SafeConfigParser, object):
 		try:
 			self.read(self.path)
 		except IOError as e:
-			print "Couldn't open ~/.isb-cgc-pipelines/config : {reason}".format(reason=e)
+			print "Couldn't open {path}: {reason}".format(path=self.path, reason=e)
 			exit(-1)
 		else:
 			d = {}
@@ -226,7 +223,7 @@ class PipelinesConfigUpdateHandler(pyinotify.ProcessEvent):
 
 class PipelineSchedulerUtils(object):
 	@staticmethod
-	def startScheduler(config):
+	def startScheduler(config, user):
 		# set up the rabbitmq queues
 		rabbitmqConn = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
 		channel = rabbitmqConn.channel()
@@ -263,7 +260,7 @@ class PipelineSchedulerUtils(object):
 			c.set("program:pipelineJobScheduler", "numprocs", "1")
 			c.set("program:pipelineJobScheduler", "autostart", "true")
 			c.set("program:pipelineJobScheduler", "autorestart", "true")
-			c.set("program:pipelineJobScheduler", "user", os.environ["USER"])
+			c.set("program:pipelineJobScheduler", "user", user)
 
 			c.set("program:pipelinePreemptedLogsHandler", "process_name", "%(program_name)s_%(process_num)s")
 			c.set("program:pipelinePreemptedLogsHandler", "command",
@@ -273,7 +270,7 @@ class PipelineSchedulerUtils(object):
 			c.set("program:pipelinePreemptedLogsHandler", "numprocs", "10")  # TODO: come up with a formula for determining the number of processes
 			c.set("program:pipelinePreemptedLogsHandler", "autostart", "true")
 			c.set("program:pipelinePreemptedLogsHandler", "autorestart", "true")
-			c.set("program:pipelinePreemptedLogsHandler", "user", os.environ["USER"])
+			c.set("program:pipelinePreemptedLogsHandler", "user", user)
 
 			c.set("program:pipelineDeleteLogsHandler", "process_name", "%(program_name)s_%(process_num)s")
 			c.set("program:pipelineDeleteLogsHandler", "command",
@@ -282,7 +279,7 @@ class PipelineSchedulerUtils(object):
 			c.set("program:pipelineDeleteLogsHandler", "numprocs", "10")  # TODO: come up with a formula for determining the number of processes
 			c.set("program:pipelineDeleteLogsHandler", "autostart", "true")
 			c.set("program:pipelineDeleteLogsHandler", "autorestart", "true")
-			c.set("program:pipelineDeleteLogsHandler", "user", os.environ["USER"])
+			c.set("program:pipelineDeleteLogsHandler", "user", user)
 
 			with open("/etc/supervisor/supervisord.conf", "w") as f:
 				c.write(f)

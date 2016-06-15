@@ -183,6 +183,7 @@ def getJobsList(args, unknown, config):  # TODO: reimplement
 	else:
 		print "No jobs found"
 
+
 def main(args, unknown):
 	if args.subcommand == "bootstrap":
 		config = PipelinesConfig()
@@ -190,11 +191,12 @@ def main(args, unknown):
 
 	elif args.subcommand == "scheduler":
 		config = PipelinesConfig()
+		user = os.environ["USER"]
 
 		if args.schedulerOperation == "stop":
-			PipelineSchedulerUtils.stopScheduler(config)
+			PipelineSchedulerUtils.stopScheduler()
 		elif args.schedulerOperation == "start":
-			PipelineSchedulerUtils.startScheduler(config)
+			PipelineSchedulerUtils.startScheduler(config, user)
 		else:
 			print "ERROR: unrecognized option {o}".format(o=args.startOrStop)
 			exit(-1)
@@ -227,6 +229,7 @@ def main(args, unknown):
 
 	elif args.subcommand == "config":
 		parser = argparse.ArgumentParser()
+		path = os.path.join(os.environ["HOME"], ".isb-cgc-pipelines", "config")
 
 		if args.configOperation == "set":
 			parser.add_argument("parameter", choices=["gcp/project_id", "gcp/zones", "gcp/scopes", "gcp/serviceAccount", "pipelines/autorestartPreempted", "all"])
