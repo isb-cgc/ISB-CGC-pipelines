@@ -463,7 +463,7 @@ class PipelineDbUtils(object):
 				'processing_time FLOAT, '
 				'request TEXT)'
 			)
-			self._pipelinesDb.execute()
+			self._pipelinesDb.execute(query)
 			self._dbConn.commit()
 
 		if len(self._pipelinesDb.execute('SELECT name FROM sqlite_master WHERE type="table" AND name="job_dependencies"').fetchall()) == 0:
