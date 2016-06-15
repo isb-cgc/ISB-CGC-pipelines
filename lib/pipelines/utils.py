@@ -1090,16 +1090,22 @@ class PipelineServiceUtils:
 				except HttpError as e:
 					print "ERROR: couldn't create pubsub topic {t} : {reason}".format(t=t, reason=e)
 					exit(-1)
-				else:
-					body = {
-						"destination": "googleapis.com/auth/pubsub/projects/{project}/topics/{t}".format(project=config.project_id, t=t),
-						"filter": v["filter"]
-					}
-					try:
-						logging.projects().sinks().create(projectName=config.project_id, body=body).execute()
-					except HttpError as e:
-						print "ERROR: couldn't create the pipelineVmInsert log sink : {reason}".format(reason=e)
-						exit(-1)
+
+			body = {
+				"destination": "googleapis.com/auth/pubsub/projects/{project}/topics/{t}".format(project=config.project_id, t=t),
+				"filter": v["filter"],
+				"name": t
+			}
+
+			sink = "projects/{project}/sinks/{t}".format(project=config.project_id, t=t)
+			try:
+				logging.projects().sinks().get(sinkName=sink)
+			except HttpError as e:
+				try:
+					logging.projects().sinks().create(projectName="projects/{project}".format(project=config.project_id), body=body).execute()
+				except HttpError as e:
+					print "ERROR: couldn't create the pipelineVmInsert log sink : {reason}".format(reason=e)
+					exit(-1)
 
 		print "Messaging bootstrap successful!"
 
