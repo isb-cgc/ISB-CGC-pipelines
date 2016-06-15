@@ -11,6 +11,9 @@ from pipelines.builder import PipelineBuilder
 from pipelines.utils import PipelinesConfig, PipelineDbUtils, PipelineServiceUtils, PipelineSchedulerUtils
 import pprint
 
+
+PIPELINES_CONFIG_PATH = os.path.join(os.environ["HOME"], ".isb-cgc-pipelines", "config")
+
 def bootstrap(config):
 	# API service objects
 	credentials = GoogleCredentials.get_application_default()
@@ -186,11 +189,11 @@ def getJobsList(args, unknown, config):  # TODO: reimplement
 
 def main(args, unknown):
 	if args.subcommand == "bootstrap":
-		config = PipelinesConfig()
+		config = PipelinesConfig(PIPELINES_CONFIG_PATH)
 		bootstrap(config)
 
 	elif args.subcommand == "scheduler":
-		config = PipelinesConfig()
+		config = PipelinesConfig(PIPELINES_CONFIG_PATH)
 		user = os.environ["USER"]
 
 		if args.schedulerOperation == "stop":
@@ -202,44 +205,43 @@ def main(args, unknown):
 			exit(-1)
 
 	if args.subcommand == "submit":
-		config = PipelinesConfig()
+		config = PipelinesConfig(PIPELINES_CONFIG_PATH)
 		submitPipeline(args, config)
 
 	elif args.subcommand == "stop":
-		config = PipelinesConfig()
+		config = PipelinesConfig(PIPELINES_CONFIG_PATH)
 		stopPipeline(args, unknown, config) 
 
 	elif args.subcommand == "restart":
-		config = PipelinesConfig()
+		config = PipelinesConfig(PIPELINES_CONFIG_PATH)
 		restartJobs(args, config)
 
 	elif args.subcommand == "clean":
-		config = PipelinesConfig()
+		config = PipelinesConfig(PIPELINES_CONFIG_PATH)
 		cleanPipelines(args, unknown, config) 
 
 	elif args.subcommand == "logs":
-		config = PipelinesConfig()
+		config = PipelinesConfig(PIPELINES_CONFIG_PATH)
 		getJobLogs(args, config)
 
 	elif args.subcommand == "list":
-		config = PipelinesConfig()
+		config = PipelinesConfig(PIPELINES_CONFIG_PATH)
 
 		if args.entity == "jobs":
 			getJobsList(args, unknown, config)
 
 	elif args.subcommand == "config":
 		parser = argparse.ArgumentParser()
-		path = os.path.join(os.environ["HOME"], ".isb-cgc-pipelines", "config")
 
 		if args.configOperation == "set":
 			parser.add_argument("parameter", choices=["gcp/project_id", "gcp/zones", "gcp/scopes", "gcp/serviceAccount", "pipelines/autorestartPreempted", "all"])
 			args, value = parser.parse_known_args(args=unknown)
 
 			if args.parameter == "all":
-				config = PipelinesConfig(first_time=True)
+				config = PipelinesConfig(PIPELINES_CONFIG_PATH, first_time=True)
 
 			else:
-				config = PipelinesConfig()
+				config = PipelinesConfig(PIPELINES_CONFIG_PATH)
 				section, option = args.parameter.split('/')
 				try:
 					config.update(section, option, value)
