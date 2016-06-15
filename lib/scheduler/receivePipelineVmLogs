@@ -111,7 +111,8 @@ def main(args, config):
 
 	# Create a POST body for the Pub/Sub request
 	body = {
-		'returnImmediately': False
+		'returnImmediately': False,
+		'maxMessages': 1
 	}
 
 	while True:
