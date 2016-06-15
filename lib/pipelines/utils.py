@@ -318,7 +318,7 @@ class PipelineSchedulerUtils(object):
 
 
 class PipelineQueueUtils(object):
-	def __init__(self, config):
+	def __init__(self):
 		self._connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost'))
 		self._channel = self._connection.channel()
 		self._channel.queue_declare(queue='WAIT_Q', durable=True)
