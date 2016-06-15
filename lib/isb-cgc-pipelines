@@ -192,9 +192,9 @@ def main(args, unknown):
 		config = PipelinesConfig()
 
 		if args.schedulerOperation == "stop":
-			PipelineSchedulerUtils.stopScheduler(args, unknown, config)
+			PipelineSchedulerUtils.stopScheduler(config)
 		elif args.schedulerOperation == "start":
-			PipelineSchedulerUtils.startScheduler(args, unknown, config)
+			PipelineSchedulerUtils.startScheduler(config)
 		else:
 			print "ERROR: unrecognized option {o}".format(o=args.startOrStop)
 			exit(-1)
