@@ -454,7 +454,7 @@ class PipelineDbUtils(object):
 				'pipeline_name VARCHAR(128), '
 				'tag VARCHAR(128), '
 				'current_status VARCHAR(128), '
-				'preemptions INTEGER, ',
+				'preemptions INTEGER, '
 				'gcs_log_path VARCHAR(128), '
 				'stdout_log VARCHAR(128), '
 				'stderr_log VARCHAR(128), '
