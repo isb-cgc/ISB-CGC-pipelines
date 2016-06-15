@@ -1079,13 +1079,27 @@ class PipelineServiceUtils:
 
 		for t, v in topics.iteritems():
 			topic = "projects/{project}/topics/{t}".format(project=config.project_id, t=t)
+			subscription = 'projects/{project}/subscriptions/{subscription}'.format(project=config.project_id, subscription=t)
 			try:
 				pubsub.projects().topics().get(topic=topic).execute()
-			except HttpError as e:
+			except HttpError:
 				try:
 					pubsub.projects().topics().create(name=topic, body={"name": topic}).execute()
 				except HttpError as e:
 					print "ERROR: couldn't create pubsub topic {t} : {reason}".format(t=t, reason=e)
+					exit(-1)
+
+			try:
+				pubsub.subscriptions().get(subscription=subscription).execute()
+			except HttpError:
+				body = {
+					"topic": topic,
+					"name": subscription
+				}
+				try:
+					pubsub.subscriptions.create(name=subscription, body=body)
+				except HttpError as e:
+					print "ERROR: couldn't create pubsub subscription {s}: {reason}".format(s=subscription, reaosn=e)
 					exit(-1)
 
 			body = {
