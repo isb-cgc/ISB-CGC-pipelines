@@ -94,7 +94,7 @@ def main(args, config):
 			pipelineQueueUtils.acknowledge(method)
 
 		else:
-			PipelineSchedulerUtils.writeStdout("No message returned!")
+			pass
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
