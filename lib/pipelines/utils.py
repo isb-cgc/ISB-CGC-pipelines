@@ -60,7 +60,7 @@ class PipelinesConfig(SafeConfigParser, object):
 			"scopes": {
 				"section": "gcp",
 				"required": True,
-				"default": "https://www.googleapis.com/auth/pubsub,https://www.googleapis.com/auth/compute,https://www.googleapis.com/auth/devstorage.full_control",
+				"default": "https://www.googleapis.com/auth/genomics,https://www.googleapis.com/auth/compute,https://www.googleapis.com/auth/devstorage.full_control",
 				"message": "Enter a comma-delimited list of GCP scopes (leave blank to use the default list of scopes): "
 			},
 			"service_account_email": {
