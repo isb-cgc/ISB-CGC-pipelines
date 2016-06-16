@@ -17,6 +17,7 @@ PIPELINES_CONFIG_PATH = os.path.join(os.environ["HOME"], ".isb-cgc-pipelines", "
 def bootstrap(config):
 	# API service objects
 	credentials = GoogleCredentials.get_application_default()
+	credentials.create_scoped(['https://www.googleapis.com/auth/pubsub', 'https://www.googleapis.com/auth/logging'])
 	http = credentials.authorize(httplib2.Http())
 	if credentials.access_token_expired:
 		credentials.refresh(http)
