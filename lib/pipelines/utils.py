@@ -12,6 +12,8 @@ from datetime import datetime
 from random import SystemRandom
 from ConfigParser import SafeConfigParser, NoOptionError, NoSectionError
 
+import pprint
+
 from googleapiclient.errors import HttpError
 
 MODULE_PATH = "/usr/local/ISB-CGC-pipelines/lib"  # TODO: move path to configuration file
@@ -1105,11 +1107,12 @@ class PipelineServiceUtils:
 				logging.projects().sinks().get(sinkName=sink)
 			except HttpError as e:
 				try:
-					logging.projects().sinks().create(projectName="projects/{project}".format(project=config.project_id), body=body).execute()
+					r = logging.projects().sinks().create(projectName="projects/{project}".format(project=config.project_id), body=body).execute()
 				except HttpError as e:
 					print "ERROR: couldn't create the pipelineVmInsert log sink : {reason}".format(reason=e)
 					exit(-1)
 
+		pprint.pprint r
 		print "Messaging bootstrap successful!"
 
 
