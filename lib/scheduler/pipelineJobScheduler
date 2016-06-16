@@ -16,7 +16,7 @@ from pipelines.utils import PipelinesConfig, PipelinesConfigUpdateHandler, Pipel
 def main(args, config):
 	# authenticate
 	credentials = GoogleCredentials.get_application_default()
-
+	credentials.create_scoped(config.scopes.split(','))
 	http = httplib2.Http()
 	credentials.authorize(http)
 
@@ -86,7 +86,7 @@ def main(args, config):
 				jobInfo = pipelineDbUtils.getJobInfo(select=["pipeline_name", "tag"], where={"job_id": body["job_id"]})
 				PipelineSchedulerUtils.writeStderr(
 					"ERROR: couldn't start job {pipeline}-{tag} : {reason}".format(pipeline=jobInfo[0].pipeline_name, tag=jobInfo[0].tag, reason=e))
-				pipelineDbUtils.updateJob(run["name"], setValues={"current_status": "ERROR"})
+				pipelineDbUtils.updateJob(jobInfo[0].job_id, keyName="job_id", setValues={"current_status": "ERROR"})
 
 			else:
 				PipelineSchedulerUtils.writeStdout("Operation submitted: {op}".format(op=run["name"]))
