@@ -1136,7 +1136,7 @@ class DataUtils(object):
 			filenames.append(f["filename"])
 
 		return filenames
-	
+
 	@staticmethod
 	def calculateDiskSize(inputFile=None, inputFileSize=None, analysisId=None, scalingFactor=None, roundToNearestGbInterval=None):
 		if inputFile is not None:

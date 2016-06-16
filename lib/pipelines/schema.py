@@ -93,19 +93,15 @@ class PipelineSchema(object):
 			script = os.path.basename(scriptUrl)
 			self.addInput("pipelineScript", name, script, scriptUrl)
 			command = (
-				'cd {mnt} && mkfifo out.log && mkfifo err.log && '
+				'cd {mnt} && ls && '
 				'chmod u+x {script} && '
-				'{env}./{script} 2>> err.log 1>> out.log & '
-				'cat out.log | xargs -I outlog -n 1 curl -X \"POST\" {functionsUrl} --data {\"message\": outlog} & '
-				'cat err.log | xargs -I errlog -n 1 curl -X \"POST\" {functionsUrl} --data {\"message\": errlog} &'
-			).format(mnt=mountPath, script=script, env=envString, functionsUrl=config.functionsUrl)  # TODO: put the function urls in to the global config
+				'{env}./{script}'
+			).format(mnt=mountPath, script=script, env=envString)
 		elif cmd is not None:
 			command = (
 				'cd {mnt} && '
-				'{env}{cmd} 2>> err.log 1>> out.log & '
-				'cat out.log | xargs -I outlog -n 1 curl -X \"POST\" {functionsUrl} --data {\"message\": outlog} & '
-				'cat err.log | xargs -I errlog -n 1 curl -X \"POST\" {functionsUrl} --data {\"message\": errlog} &'
-			).format(mnt=mountPath, env=envString, cmd=cmd, functionsUrl=config.functionsUrl)  # TODO: put the function urls in to the global config
+				'{env}{cmd}'
+			).format(mnt=mountPath, env=envString, cmd=cmd)
 
 		self.setCmd(command)
 
