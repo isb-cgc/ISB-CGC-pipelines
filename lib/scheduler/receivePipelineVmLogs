@@ -41,7 +41,7 @@ class PubsubMessageHandlers(object):
 		jobInfo = pipelineDbUtils.getJobInfo(select=["job_id", "pipeline_name", "tag", "create_time"], where={"operation_id": status["name"]})
 
 		if len(jobInfo) > 0:
-			children = [x[0] for x in pipelineDbUtils.getChildJobs(jobInfo.job_id)]
+			children = [x[0] for x in pipelineDbUtils.getChildJobs(jobInfo[0].job_id)]
 
 			if log["jsonPayload"]["event_subtype"] == "compute.instances.preempted":
 				pipelineDbUtils.updateJob(operationId, setValues={"current_status": "PREEMPTED", "end_time": status["metadata"]["endTime"], "processing_time": processingTime})
@@ -49,24 +49,24 @@ class PubsubMessageHandlers(object):
 				if config.restart_preempted:
 					pipelineQueueUtils = PipelineQueueUtils()
 					jobInfo = pipelineDbUtils.getJobInfo(select=["request"], where={"operation_id": operationId})
-					pipelineQueueUtils.publish(jobInfo.request)
+					pipelineQueueUtils.publish(jobInfo[0].request)
 				else:
 					if len(children) > 0:
 						PipelineSchedulerUtils.writeStderr(
 							"Couldn't start downstream jobs for job {j} ({pipeline}-{tag}) : status is PREEMPTED (autorestart is FALSE)".format(
-								j=jobInfo.job_id, pipeline=jobInfo.pipeline_name, tag=jobInfo.tag))
+								j=jobInfo[0].job_id, pipeline=jobInfo[0].pipeline_name, tag=jobInfo[0].tag))
 
 			elif log["jsonPayload"]["event_subtype"] == "compute.instances.delete":
 				if status["done"] and "error" not in status.keys():
 					PipelineSchedulerUtils.writeStdout("PIPELINE SUCCEEDED (pipeline: {pipeline}, tag: {tag}, operation: {operation})".format(pipeline=jobInfo[0].pipeline_name, tag=jobInfo[0].tag, operation=status["name"]))
-					pipelineDbUtils.updateJob(jobInfo.job_id, setValues={"current_status": "SUCCEEDED", "end_time": status["metadata"]["endTime"], "processing_time": processingTime})
+					pipelineDbUtils.updateJob(jobInfo[0].job_id, setValues={"current_status": "SUCCEEDED", "end_time": status["metadata"]["endTime"], "processing_time": processingTime})
 
 					if len(children) > 0:
 						for c in children:
 							parents = [x[0] for x in pipelineDbUtils.getParentJobs(c)]
 							totalParents = len(parents)
 							succeededParents = 1
-							parents.remove(int(jobInfo.job_id))
+							parents.remove(int(jobInfo[0].job_id))
 
 							for p in parents:
 								status = pipelineDbUtils.getJobInfo(select=["current_status"], where={"job_id": p})[0].current_status
@@ -82,14 +82,14 @@ class PubsubMessageHandlers(object):
 								pipelineQueueUtils.publish(childRequest)
 					else:
 						PipelineSchedulerUtils.writeStdout(
-							"Job {jobid} has no child jobs to check!".format(jobid=jobInfo.job_id))
+							"Job {jobid} has no child jobs to check!".format(jobid=jobInfo[0].job_id))
 
 				elif "error" in status.keys():
-					PipelineSchedulerUtils.writeStdout("PIPELINE FAILED ({job}): {reason}".format(job="{pipeline}-{tag}".format(pipeline=jobInfo.pipeline_name, tag=jobInfo.tag), reason=status["error"]["message"]))
-					pipelineDbUtils.updateJob(jobInfo.job_id, setValues={"current_status": "FAILED", "end_time": status["metadata"]["endTime"], "processing_time": processingTime})
+					PipelineSchedulerUtils.writeStdout("PIPELINE FAILED ({job}): {reason}".format(job="{pipeline}-{tag}".format(pipeline=jobInfo[0].pipeline_name, tag=jobInfo[0].tag), reason=status["error"]["message"]))
+					pipelineDbUtils.updateJob(jobInfo[0].job_id, setValues={"current_status": "FAILED", "end_time": status["metadata"]["endTime"], "processing_time": processingTime})
 					if len(children) > 0:
 						PipelineSchedulerUtils.writeStderr("Couldn't start downstream jobs for job {j} ({pipeline}-{tag}) : status is FAILED".format(
-								j=jobInfo.job_id, pipeline=jobInfo.pipeline_name, tag=jobInfo.tag))
+								j=jobInfo[0].job_id, pipeline=jobInfo[0].pipeline_name, tag=jobInfo[0].tag))
 		else:
 			PipelineSchedulerUtils.writeStderr("Couldn't find record for operation {o}".format(o=operationId))
 							

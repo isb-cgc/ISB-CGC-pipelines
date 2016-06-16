@@ -85,7 +85,7 @@ def main(args, config):
 			except HttpError as e:
 				jobInfo = pipelineDbUtils.getJobInfo(select=["pipeline_name", "tag"], where={"job_id": body["job_id"]})
 				PipelineSchedulerUtils.writeStderr(
-					"ERROR: couldn't start job {pipeline}-{tag} : {reason}".format(pipeline=jobInfo.pipeline_name, tag=jobInfo.tag, reason=e))
+					"ERROR: couldn't start job {pipeline}-{tag} : {reason}".format(pipeline=jobInfo[0].pipeline_name, tag=jobInfo[0].tag, reason=e))
 				pipelineDbUtils.updateJob(run["name"], setValues={"current_status": "ERROR"})
 
 			else:
