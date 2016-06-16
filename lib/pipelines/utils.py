@@ -1112,7 +1112,7 @@ class PipelineServiceUtils:
 					print "ERROR: couldn't create the pipelineVmInsert log sink : {reason}".format(reason=e)
 					exit(-1)
 
-		pprint.pprint r
+		pprint.pprint(r)
 		print "Messaging bootstrap successful!"
 
 
