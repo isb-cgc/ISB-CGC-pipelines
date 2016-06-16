@@ -1039,14 +1039,6 @@ class PipelineServiceUtils:
 		timestamp = datetime.utcnow().isoformat("T") + "Z"  # RFC3339 timestamp
 
 		topics = {
-			"pipelineVmInsert": {
-				"filter": ('resource.type="gce_instance" AND '
-						'timestamp > {tz} AND jsonPayload.resource.name:"ggp-" AND '
-						'jsonPayload.event_subtype="compute.instances.insert" AND '
-						'NOT error AND logName="projects/{project}/logs/compute.googleapis.com%2Factivity_log"'
-				).format(project=config.project_id, tz=timestamp),
-				"trigger": "topic"
-			},
 			"pipelineVmPreempted": {
 				"filter": ('resource.type="gce_instance" AND '
 						'timestamp > {tz} AND jsonPayload.resource.name:"ggp-" AND '
@@ -1132,6 +1124,19 @@ class DataUtils(object):
 
 		return requests.get(cghubMetadataUrl.format(analysisId=analysisId), headers=headers).json()
 
+	@staticmethod
+	def getFilenames(analysisId):
+		analysisDetail = DataUtils.getAnalysisDetail(analysisId)
+		files = []
+		filenames = []
+		if len(analysisDetail["result_set"]["results"]) > 0:
+			files = analysisDetail["result_set"]["results"][0]["files"]
+
+		for f in files:
+			filenames.append(f["filename"])
+
+		return filenames
+	
 	@staticmethod
 	def calculateDiskSize(inputFile=None, inputFileSize=None, analysisId=None, scalingFactor=None, roundToNearestGbInterval=None):
 		if inputFile is not None:
