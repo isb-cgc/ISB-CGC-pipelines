@@ -120,7 +120,6 @@ def main(args, config):
 		if credentials.access_token_expired:
 			credentials.refresh(http)
 
-		PipelineSchedulerUtils.writeStdout("Getting ready to pull message from subscription {s}...".format(s=args.subscription))
 		resp = pubsub.projects().subscriptions().pull(subscription=subscription, body=body).execute()
 
 		receivedMessages = resp.get('receivedMessages')
@@ -137,8 +136,7 @@ def main(args, config):
 
 			# Acknowledge the message.
 			pubsub.projects().subscriptions().acknowledge(subscription=subscription, body=ackBody).execute()
-		else:
-			PipelineSchedulerUtils.writeStdout("No message to process!")
+
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
