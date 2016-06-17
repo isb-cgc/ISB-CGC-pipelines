@@ -1100,7 +1100,7 @@ class PipelineServiceUtils:
 					exit(-1)
 
 			body = {
-				"destination": "googleapis.com/auth/pubsub/projects/{project}/topics/{t}".format(project=config.project_id, t=t),
+				"destination": "pubsub.googleapis.com/projects/{project}/topics/{t}".format(project=config.project_id, t=t),
 				"filter": v["filter"],
 				"name": t
 			}
