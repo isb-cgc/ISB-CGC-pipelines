@@ -15,9 +15,20 @@ class PipelineBuilder(object):
 		self._pipelineQueueUtils = PipelineQueueUtils()
 
 	def addStep(self, root):  # root must be an instance of PipelineSchema
+		if self.hasStep(root.name):
+			raise ValueError("Pipeline already contains a step with name {n}".format(n=root.name))
+
 		self._dependencyMap[root.name] = root.getSchema()
 
 		self._pipelines.append(self._dependencyMap[root.name])
+
+	def hasStep(self, stepName):
+		hasStep = False
+		for p in self._pipelines:
+			if p == stepName:
+				hasStep = True
+
+		return hasStep
 
 	def run(self):
 		# generate schema

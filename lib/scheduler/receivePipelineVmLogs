@@ -20,7 +20,7 @@ class PubsubMessageHandlers(object):
 		# update the status of the job in the jobs db
 		instance = log["jsonPayload"]["resource"]["name"]
 		zone = log["resource"]["labels"]["zone"]
-		operationId = compute.instances().get(project=config.project_id, zone=zone, instance=instance)["description"].partition("Operation: ")[-1]
+		operationId = compute.instances().get(project=config.project_id, zone=zone, instance=instance).execute()["description"].partition("Operation: ")[-1]
 		status = genomics.operations().get(name=operationId).execute()
 
 		pipelineDbUtils = PipelineDbUtils(config)
