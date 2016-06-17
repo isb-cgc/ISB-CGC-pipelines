@@ -1044,15 +1044,15 @@ class PipelineServiceUtils:
 			"pipelineVmPreempted": {
 				"filter": ('resource.type="gce_instance" AND '
 						'timestamp > {tz} AND jsonPayload.resource.name:"ggp-" AND '
-						'jsonPayload.event_subtype="compute.instances.delete" AND '
+						'jsonPayload.event_subtype="compute.instances.preempted" AND '
 						'NOT error AND logName="projects/{project}/logs/compute.googleapis.com%2Factivity_log"'
 				).format(project=config.project_id, tz=timestamp),
 				"trigger": "topic"
 			},
 			"pipelineVmDelete": {
 				"filter": ('resource.type="gce_instance" AND '
-						'timestamp > {tz} AND jsonPayload.resource.name:"ggp-" AND '
-						'jsonPayload.event_subtype="compute.instances.preempted" AND '
+						'timestamp > "{tz}" AND jsonPayload.resource.name:"ggp-" AND '
+						'jsonPayload.event_subtype="compute.instances.delete" AND '
 						'NOT error AND logName="projects/{project}/logs/compute.googleapis.com%2Factivity_log"'
 				).format(project=config.project_id, tz=timestamp),
 				"trigger": "topic",
