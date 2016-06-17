@@ -1102,7 +1102,8 @@ class PipelineServiceUtils:
 			body = {
 				"destination": "pubsub.googleapis.com/projects/{project}/topics/{t}".format(project=config.project_id, t=t),
 				"filter": v["filter"],
-				"name": t
+				"name": t,
+				"outputVersionFormat": "V2"
 			}
 
 			sink = "projects/{project}/sinks/{t}".format(project=config.project_id, t=t)
