@@ -1069,6 +1069,23 @@ class PipelineServiceUtils:
 					print "ERROR: couldn't create pubsub topic {t} : {reason}".format(t=t, reason=e)
 					exit(-1)
 
+				body = {
+					"policy": {
+						"bindings": [
+							{
+								"role": "roles/pubsub.topics.publish",
+								"members": ["cloud-logs@system.gserviceaccount.com"]
+							}
+						]
+					}
+				}
+
+				try:
+					pubsub.projects().topics().setIamPolicy(resource=topic, body=body).execute()
+				except HttpError as e:
+					print "ERROR: couldn't set policy for topic {t} : {reason}".format(t=t, reason=e)
+					exit(-1)
+
 			try:
 				pubsub.projects().subscriptions().get(subscription=subscription).execute()
 			except HttpError:
@@ -1080,23 +1097,6 @@ class PipelineServiceUtils:
 					pubsub.projects().subscriptions().create(name=subscription, body=body).execute()
 				except HttpError as e:
 					print "ERROR: couldn't create pubsub subscription {s}: {reason}".format(s=subscription, reaosn=e)
-					exit(-1)
-
-				body = {
-					"policy": {
-						"bindings": [
-							{
-								"role": "roles/pubsub.subscriptions.consume",
-								"members": ["cloud-logs@system.gserviceaccount.com"]
-							}
-						]
-					}
-				}
-
-				try:
-					pubsub.projects().subscriptions().setIamPolicy(resource=subscription, body=body).execute()
-				except HttpError as e:
-					print "ERROR: couldn't set policy for subscription {t} : {reason}".format(t=t, reason=e)
 					exit(-1)
 
 			body = {
