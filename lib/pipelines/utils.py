@@ -14,8 +14,6 @@ from ConfigParser import SafeConfigParser, NoOptionError, NoSectionError
 
 from googleapiclient.errors import HttpError
 
-import pprint
-
 MODULE_PATH = "/usr/local/ISB-CGC-pipelines/lib"  # TODO: move path to configuration file
 
 # Kubernetes API Access
@@ -1107,8 +1105,6 @@ class PipelineServiceUtils:
 				"name": t,
 				"outputVersionFormat": "V2"
 			}
-
-			pprint.pprint(v["filter"])
 
 			sink = "projects/{project}/sinks/{t}".format(project=config.project_id, t=t)
 			try:
