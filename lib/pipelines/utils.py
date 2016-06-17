@@ -1073,7 +1073,7 @@ class PipelineServiceUtils:
 					"policy": {
 						"bindings": [
 							{
-								"role": "roles/pubsub.topics.publish",
+								"role": "roles/pubsub.publisher",
 								"members": ["cloud-logs@system.gserviceaccount.com"]
 							}
 						]
