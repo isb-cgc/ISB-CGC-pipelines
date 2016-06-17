@@ -8,8 +8,3 @@ ln -s /usr/local/ISB-CGC-pipelines/lib/examples/utility_scripts/calculateDiskSiz
 ln -s /usr/local/ISB-CGC-pipelines/lib/examples/utility_scripts/constructCghubFilePaths /usr/bin/constructCghubFilePaths
 ln -s /usr/local/ISB-CGC-pipelines/lib/examples/utility_scripts/getChecksum /usr/bin/getChecksum
 ln -s /usr/local/ISB-CGC-pipelines/lib/examples/utility_scripts/getFilenames /usr/bin/getFilenames
-
-
-
-
-

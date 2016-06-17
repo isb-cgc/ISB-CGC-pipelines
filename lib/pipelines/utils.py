@@ -1055,18 +1055,6 @@ class PipelineServiceUtils:
 				).format(project=config.project_id, tz=timestamp),
 				"trigger": "topic",
 			}
-			#"pipelineServerLogs": {  # TODO: possibly implement additional log collection
-			#	"filter": "",
-			#	"trigger": "http"
-			#},
-			#"pipelineJobStdoutLogs": {
-			#	"filter": "",
-			#	"trigger": "http"
-			#},
-			#"pipelineJobStderrLogs": {
-			#	"filter": "",
-			#	"trigger": "http"
-			#}
 		}
 
 		for t, v in topics.iteritems():
@@ -1079,6 +1067,23 @@ class PipelineServiceUtils:
 					pubsub.projects().topics().create(name=topic, body={"name": topic}).execute()
 				except HttpError as e:
 					print "ERROR: couldn't create pubsub topic {t} : {reason}".format(t=t, reason=e)
+					exit(-1)
+
+				body = {
+					"policy": {
+						"bindings": [
+							{
+								"role": "roles/editor",
+								"members": ["cloud-logs@system.gserviceaccount.com"]
+							}
+						]
+					}
+				}
+
+				try:
+					pubsub.projects().topics().setIamPolicy(resource=topic, body=body).execute()
+				except HttpError as e:
+					print "ERROR: couldn't set policy for topic {t} : {reason}".format(t=t, reason=e)
 					exit(-1)
 
 			try:
@@ -1094,6 +1099,23 @@ class PipelineServiceUtils:
 					print "ERROR: couldn't create pubsub subscription {s}: {reason}".format(s=subscription, reaosn=e)
 					exit(-1)
 
+				body = {
+					"policy": {
+						"bindings": [
+							{
+								"role": "roles/editor",
+								"members": ["cloud-logs@system.gserviceaccount.com"]
+							}
+						]
+					}
+				}
+
+				try:
+					pubsub.projects().subscriptions().setIamPolicy(resource=subscription, body=body).execute()
+				except HttpError as e:
+					print "ERROR: couldn't set policy for subscription {t} : {reason}".format(t=t, reason=e)
+					exit(-1)
+
 			body = {
 				"destination": "googleapis.com/auth/pubsub/projects/{project}/topics/{t}".format(project=config.project_id, t=t),
 				"filter": v["filter"],
@@ -1105,9 +1127,9 @@ class PipelineServiceUtils:
 				logging.projects().sinks().get(sinkName=sink).execute()
 			except HttpError as e:
 				try:
-					r = logging.projects().sinks().create(projectName="projects/{project}".format(project=config.project_id), body=body).execute()
+					logging.projects().sinks().create(projectName="projects/{project}".format(project=config.project_id), body=body).execute()
 				except HttpError as e:
-					print "ERROR: couldn't create the pipelineVmInsert log sink : {reason}".format(reason=e)
+					print "ERROR: couldn't create the {t} log sink : {reason}".format(t=t, reason=e)
 					exit(-1)
 
 		print "Messaging bootstrap successful!"
