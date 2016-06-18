@@ -252,6 +252,9 @@ class PipelineSchedulerUtils(object):
 			if not c.has_section("program:pipelineDeleteLogsHandler"):
 				c.add_section("program:pipelineDeleteLogsHandler")
 
+			if not c.has_section("program:pipelineInsertLogsHandler"):
+				c.add_section("program:pipelineInsertLogsHandler")
+
 			c.set("program:pipelineJobScheduler", "process_name", "pipelineJobScheduler")
 			c.set("program:pipelineJobScheduler", "command",
 			      "pipelineJobScheduler --config {config}".format(config=config.path))
@@ -261,6 +264,17 @@ class PipelineSchedulerUtils(object):
 			c.set("program:pipelineJobScheduler", "autostart", "true")
 			c.set("program:pipelineJobScheduler", "autorestart", "true")
 			c.set("program:pipelineJobScheduler", "user", user)
+
+			c.set("program:pipelineInsertLogsHandler", "process_name", "%(program_name)s_%(process_num)s")
+			c.set("program:pipelineInsertLogsHandler", "command",
+			      "receivePipelineVmLogs --config {config} --subscription pipelineVmInsert".format(config=config.path))
+			c.set("program:pipelineInsertLogsHandler", "environment",
+			      "PYTHONPATH={modulePath}".format(modulePath=MODULE_PATH))
+			c.set("program:pipelineInsertLogsHandler", "numprocs",
+			      "10")  # TODO: come up with a formula for determining the number of processes
+			c.set("program:pipelineInsertLogsHandler", "autostart", "true")
+			c.set("program:pipelineInsertLogsHandler", "autorestart", "true")
+			c.set("program:pipelineInsertLogsHandler", "user", user)
 
 			c.set("program:pipelinePreemptedLogsHandler", "process_name", "%(program_name)s_%(process_num)s")
 			c.set("program:pipelinePreemptedLogsHandler", "command",
