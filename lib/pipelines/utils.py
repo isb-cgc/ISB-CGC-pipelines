@@ -1057,6 +1057,7 @@ class PipelineServiceUtils:
 			"pipelineVmInsert": {
 				"filter": ('resource.type="gce_instance" AND '
 						'timestamp > "{tz}" AND jsonPayload.resource.name:"ggp-" AND '
+						'jsonPayload.event_type="GCE_OPERATION_DONE" AND '
 						'jsonPayload.event_subtype="compute.instances.insert" AND '
 						'NOT error AND logName="projects/{project}/logs/compute.googleapis.com%2Factivity_log"'
 				).format(project=config.project_id, tz=timestamp),
@@ -1065,6 +1066,7 @@ class PipelineServiceUtils:
 			"pipelineVmPreempted": {
 				"filter": ('resource.type="gce_instance" AND '
 						'timestamp > "{tz}" AND jsonPayload.resource.name:"ggp-" AND '
+						'jsonPayload.event_type="GCE_OPERATION_DONE" AND '
 						'jsonPayload.event_subtype="compute.instances.preempted" AND '
 						'NOT error AND logName="projects/{project}/logs/compute.googleapis.com%2Factivity_log"'
 				).format(project=config.project_id, tz=timestamp),
@@ -1073,6 +1075,7 @@ class PipelineServiceUtils:
 			"pipelineVmDelete": {
 				"filter": ('resource.type="gce_instance" AND '
 						'timestamp > "{tz}" AND jsonPayload.resource.name:"ggp-" AND '
+						'jsonPayload.event_type="GCE_OPERATION_DONE" AND '
 						'jsonPayload.event_subtype="compute.instances.delete" AND '
 						'NOT error AND logName="projects/{project}/logs/compute.googleapis.com%2Factivity_log"'
 				).format(project=config.project_id, tz=timestamp),
@@ -1090,23 +1093,6 @@ class PipelineServiceUtils:
 					pubsub.projects().topics().create(name=topic, body={"name": topic}).execute()
 				except HttpError as e:
 					print "ERROR: couldn't create pubsub topic {t} : {reason}".format(t=t, reason=e)
-					exit(-1)
-
-				body = {
-					"policy": {
-						"bindings": [
-							{
-								"role": "roles/pubsub.publisher",
-								"members": ["cloud-logs@system.gserviceaccount.com"]
-							}
-						]
-					}
-				}
-
-				try:
-					pubsub.projects().topics().setIamPolicy(resource=topic, body=body).execute()
-				except HttpError as e:
-					print "ERROR: couldn't set policy for topic {t} : {reason}".format(t=t, reason=e)
 					exit(-1)
 
 			try:

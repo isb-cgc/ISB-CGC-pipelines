@@ -5,6 +5,7 @@ import base64
 import httplib2
 import argparse
 import dateutil
+import threading
 from apiclient import discovery
 from oauth2client import client as oauth2client
 
@@ -155,6 +156,7 @@ def main(args, config):
 				pubsubMessage = receivedMessage.get('message')
 				if pubsubMessage:
 					log = json.loads(base64.b64decode(str(pubsubMessage.get('data'))))
+					PipelineSchedulerUtils.writeStdout("Received message: {msg}".format(log))
 					PubsubMessageHandlers.pipelineVmLogs(log, compute, genomics, config)
 					ackIds.append(receivedMessage.get('ackId'))
 
@@ -172,4 +174,9 @@ if __name__ == "__main__":
 	args = parser.parse_args()
 	config = PipelinesConfig(path=args.config)
 
+	t = threading.Thread(target=config.watch)
+	t.daemon = True
+	t.start()
+
 	main(args, config)
+	t.join()

@@ -8,7 +8,7 @@ from time import sleep
 from apiclient.discovery import build
 from googleapiclient.errors import HttpError
 from oauth2client.client import GoogleCredentials
-from pipelines.utils import PipelinesConfig, PipelinesConfigUpdateHandler, PipelineSchedulerUtils, PipelineDbUtils, PipelineQueueUtils
+from pipelines.utils import PipelinesConfig, PipelineSchedulerUtils, PipelineDbUtils, PipelineQueueUtils
 
 # NOTE: this process should be started up as part of the scheduling system (managed by Supervisor)
 

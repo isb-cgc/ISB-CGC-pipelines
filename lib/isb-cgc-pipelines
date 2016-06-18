@@ -131,7 +131,7 @@ def getJobsList(args, unknown, config):  # TODO: reimplement
 
 	if args.tag:
 		where["tag"] = args.tag
-		
+
 	if args.status:
 		where["current_status"] = args.status
 
