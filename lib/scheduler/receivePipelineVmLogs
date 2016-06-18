@@ -7,6 +7,7 @@ import argparse
 import dateutil
 import threading
 from apiclient import discovery
+from googleapiclient.errors import HttpError
 from oauth2client import client as oauth2client
 
 from pipelines.utils import PipelinesConfig, PipelineDbUtils, PipelineQueueUtils, PipelineSchedulerUtils
@@ -117,9 +118,13 @@ class PubsubMessageHandlers(object):
 
 		elif log["jsonPayload"]["event_subtype"] == "compute.instances.insert":
 			zone = log["resource"]["labels"]["zone"]
-			operationId = compute.instances().get(project=config.project_id, zone=zone, instance=instance).execute()["description"].partition("Operation: ")[-1]
-			PipelineSchedulerUtils.writeStdout("Instance {i} (operation {o}) started!".format(i=instance, o=operationId))
-			pipelineDbUtils.updateJob(operationId, keyName="operation_id", setValues={"instance_name": instance})
+			try:
+				operationId = compute.instances().get(project=config.project_id, zone=zone, instance=instance).execute()["description"].partition("Operation: ")[-1]
+			except HttpError:
+				pass
+			else:
+				PipelineSchedulerUtils.writeStdout("Instance {i} (operation {o}) started!".format(i=instance, o=operationId))
+				pipelineDbUtils.updateJob(operationId, keyName="operation_id", setValues={"instance_name": instance})
 							
 
 def main(args, config):
