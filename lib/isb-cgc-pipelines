@@ -157,7 +157,7 @@ def getJobsList(args, unknown, config):  # TODO: reimplement
 		pipelineLengths.append(len("PIPELINE"))
 		maxPipelineLen = max(pipelineLengths)
 
-		operationIdLengths = [len(x.operation_id.split('/')[1]) if x.operation_id is not None else len(str("None")) for x in jobs]
+		operationIdLengths = [len(x.operation_id) if x.operation_id is not None else len(str("None")) for x in jobs]
 		operationIdLengths.append(len("OPERATION ID"))
 		maxOperationIdLen = max(operationIdLengths)
 
@@ -180,7 +180,7 @@ def getJobsList(args, unknown, config):  # TODO: reimplement
 			else:
 				ct = "None"
 			if j.operation_id is not None:
-				op = j.operation_id.split('/')[1]
+				op = j.operation_id
 			else:
 				op = "None"
 
