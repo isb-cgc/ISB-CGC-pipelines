@@ -1,8 +1,8 @@
-import os
 import json
-import pika
 from jsonspec.validators import load  # jsonspec is licensed under BSD
 from utils import PipelineDbUtils, PipelineQueueUtils
+
+import pprint
 
 
 class PipelineBuilder(object):
@@ -113,6 +113,7 @@ class PipelineBuilder(object):
 			exit(-1)
 
 	def _submitSchema(self):
+		pprint.pprint(self._dependencyMap)
 		jobIdMap = {}
 
 		for p in self._schema["pipelines"]:  # Add all jobs to the jobs table 
