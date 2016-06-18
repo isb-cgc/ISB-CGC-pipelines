@@ -116,6 +116,7 @@ def getJobsList(args, unknown, config):  # TODO: reimplement
 
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--pipeline")
+	parser.add_argument("--tag")
 	parser.add_argument("--status", choices=["running", "waiting", "succeeded", "failed", "error", "preempted"])
 	parser.add_argument("--createTimeAfter")
 	parser.add_argument("--limit", default=50)
@@ -128,6 +129,9 @@ def getJobsList(args, unknown, config):  # TODO: reimplement
 	if args.pipeline:
 		where["pipeline_name"] = args.pipeline
 
+	if args.tag:
+		where["tag"] = args.tag
+		
 	if args.status:
 		where["current_status"] = args.status
 
