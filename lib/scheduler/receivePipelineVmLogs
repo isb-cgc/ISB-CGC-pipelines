@@ -49,7 +49,7 @@ class PubsubMessageHandlers(object):
 
 			else:
 				PipelineSchedulerUtils.writeStdout("Instance {i} (operation {o}) preempted!".format(i=instance, o=operationId))
-				status = genomics.operations().get(name=operationId).execute()
+				status = genomics.operations().get(name="operations/{op}".format(op=operationId)).execute()
 				processingTime = getProcessingTime(status)
 				pipelineDbUtils.updateJob(operationId, setValues={"current_status": "PREEMPTED", "end_time": status["metadata"]["endTime"], "processing_time": processingTime})
 
@@ -76,7 +76,7 @@ class PubsubMessageHandlers(object):
 
 			else:
 				PipelineSchedulerUtils.writeStdout("Instance {i} (operation {o}) completed!".format(i=instance, o=operationId))
-				status = genomics.operations().get(name=operationId).execute()
+				status = genomics.operations().get(name="operations/{op}".format(op=operationId)).execute()
 				processingTime = getProcessingTime(status)
 
 				jobInfo = pipelineDbUtils.getJobInfo(select=["job_id", "pipeline_name", "tag", "create_time"], where={"operation_id": status["name"]})
