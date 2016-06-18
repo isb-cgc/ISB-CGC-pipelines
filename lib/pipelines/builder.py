@@ -116,7 +116,7 @@ class PipelineBuilder(object):
 		jobIdMap = {}
 
 		for p in self._schema["pipelines"]:  # Add all jobs to the jobs table 
-			jobIdMap[p["name"]] = self._pipelineDbUtils.insertJob(None, p["name"], p["tag"], None, 0, p["request"]["pipelineArgs"]["logging"]["gcsPath"], None, None, None, None, None, json.dumps(p["request"]))
+			jobIdMap[p["name"]] = self._pipelineDbUtils.insertJob(None, None, p["name"], p["tag"], None, 0, p["request"]["pipelineArgs"]["logging"]["gcsPath"], None, None, None, None, None, json.dumps(p["request"]))
 
 		for p in self._schema["pipelines"]:  # Add dependency info to the job dependency table
 			if "children" in p.keys() and len(p["children"]) > 0:

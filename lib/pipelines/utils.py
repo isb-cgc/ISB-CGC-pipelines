@@ -359,7 +359,7 @@ class PipelineDbUtils(object):
 		self._dbConn.close()
 
 	def insertJob(self, *args):
-		self._pipelinesDb.execute("INSERT INTO jobs (operation_id, pipeline_name, tag, current_status, preemptions, gcs_log_path, stdout_log, stderr_log, create_time, end_time, processing_time, request) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", tuple(args))
+		self._pipelinesDb.execute("INSERT INTO jobs (operation_id, instance_name, pipeline_name, tag, current_status, preemptions, gcs_log_path, stdout_log, stderr_log, create_time, end_time, processing_time, request) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", tuple(args))
 		self._dbConn.commit()
 
 		return self._pipelinesDb.lastrowid
@@ -448,6 +448,7 @@ class PipelineDbUtils(object):
 			query = (
 				'CREATE TABLE jobs (job_id INTEGER PRIMARY KEY AUTOINCREMENT, '
 				'operation_id VARCHAR(128), '
+				'instance_name VARCHAR(128), '
 				'pipeline_name VARCHAR(128), '
 				'tag VARCHAR(128), '
 				'current_status VARCHAR(128), '
@@ -1039,6 +1040,14 @@ class PipelineServiceUtils:
 		timestamp = datetime.utcnow().isoformat("T") + "Z"  # RFC3339 timestamp
 
 		topics = {
+			"pipelineVmInsert": {
+				"filter": ('resource.type="gce_instance" AND '
+						'timestamp > "{tz}" AND jsonPayload.resource.name:"ggp-" AND '
+						'jsonPayload.event_subtype="compute.instances.insert" AND '
+						'NOT error AND logName="projects/{project}/logs/compute.googleapis.com%2Factivity_log"'
+				).format(project=config.project_id, tz=timestamp),
+				"trigger": "topic"
+			},
 			"pipelineVmPreempted": {
 				"filter": ('resource.type="gce_instance" AND '
 						'timestamp > "{tz}" AND jsonPayload.resource.name:"ggp-" AND '
