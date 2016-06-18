@@ -156,7 +156,7 @@ def main(args, config):
 				pubsubMessage = receivedMessage.get('message')
 				if pubsubMessage:
 					log = json.loads(base64.b64decode(str(pubsubMessage.get('data'))))
-					PipelineSchedulerUtils.writeStdout("Received message: {msg}".format(log))
+					PipelineSchedulerUtils.writeStdout("Received message: {msg}".format(msg=base64.b64decode(str(pubsubMessage.get('data')))))
 					PubsubMessageHandlers.pipelineVmLogs(log, compute, genomics, config)
 					ackIds.append(receivedMessage.get('ackId'))
 
