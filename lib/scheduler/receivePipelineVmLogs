@@ -38,11 +38,15 @@ class PubsubMessageHandlers(object):
 		instance = log["jsonPayload"]["resource"]["name"]
 
 		if log["jsonPayload"]["event_subtype"] == "compute.instances.preempted":
+
 			try:
 				operationId =  pipelineDbUtils.getJobInfo(select=["operation_id"], where={"instance_name": instance})[0].operation_id
+
 			except IndexError:
-				pass
+				PipelineSchedulerUtils.writeStderr("Instance {i} preempted, but no record exists in jobs database".format(i=instance))
+
 			else:
+				PipelineSchedulerUtils.writeStdout("Instance {i} (operation {o}) preempted!".format(i=instance, o=operationId))
 				status = genomics.operations().get(name=operationId).execute()
 				processingTime = getProcessingTime(status)
 				pipelineDbUtils.updateJob(operationId, setValues={"current_status": "PREEMPTED", "end_time": status["metadata"]["endTime"], "processing_time": processingTime})
@@ -63,11 +67,13 @@ class PubsubMessageHandlers(object):
 		elif log["jsonPayload"]["event_subtype"] == "compute.instances.delete":
 			# update the status of the job in the jobs db
 			try:
-				operationId = pipelineDbUtils.getJobInfo(select=["operation_id"], where={"instance_name": instance})[
-					0].operation_id
+				operationId = pipelineDbUtils.getJobInfo(select=["operation_id"], where={"instance_name": instance})[0].operation_id
+
 			except IndexError:
-				pass
+				PipelineSchedulerUtils.writeStderr("Instance {i} deleted, but no record exists in jobs database".format(i=instance))
+
 			else:
+				PipelineSchedulerUtils.writeStdout("Instance {i} (operation {o}) completed!".format(i=instance, o=operationId))
 				status = genomics.operations().get(name=operationId).execute()
 				processingTime = getProcessingTime(status)
 
@@ -111,7 +117,8 @@ class PubsubMessageHandlers(object):
 		elif log["jsonPayload"]["event_subtype"] == "compute.instances.insert":
 			zone = log["resource"]["labels"]["zone"]
 			operationId = compute.instances().get(project=config.project_id, zone=zone, instance=instance).execute()["description"].partition("Operation: ")[-1]
-			pipelineDbUtils.updateJob(operationId, setValues={"instance_name": instance})
+			PipelineSchedulerUtils.writeStdout("Instance {i} (operation {o}) started!".format(i=instance, o=operationId))
+			pipelineDbUtils.updateJob(operationId, keyName="operation_id", setValues={"instance_name": instance})
 							
 
 def main(args, config):
