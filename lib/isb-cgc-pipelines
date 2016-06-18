@@ -26,7 +26,6 @@ def bootstrap(config):
 
 	PipelineServiceUtils.bootstrapMessageHandlers(pubsub, logging, config, mode="local")
 
-
 def submitPipeline(args, config):
 
 	# send the request message to the local rabbitmq server
