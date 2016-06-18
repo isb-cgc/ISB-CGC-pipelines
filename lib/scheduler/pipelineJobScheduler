@@ -86,8 +86,9 @@ def main(args, config):
 				pipelineDbUtils.updateJob(body["job_id"], keyName="job_id", setValues={"current_status": "ERROR"})
 
 			else:
-				PipelineSchedulerUtils.writeStdout("Operation submitted: {op}".format(op=run["name"]))
-				pipelineDbUtils.updateJob(body["job_id"], keyName="job_id", setValues={"current_status": "RUNNING", "operation_id": run["name"], "stdout_log": "{op}-stdout.log".format(op=run["name"].split('/')[1]), "stderr_log": "{op}-stderr.log".format(op=run["name"].split('/')[1]), "create_time": run["metadata"]["createTime"]})
+				operationId = run["name"].split("/")[-1]
+				PipelineSchedulerUtils.writeStdout("Operation submitted: {op}".format(op=operationId))
+				pipelineDbUtils.updateJob(body["job_id"], keyName="job_id", setValues={"current_status": "RUNNING", "operation_id": operationId, "stdout_log": "{op}-stdout.log".format(op=operationId), "stderr_log": "{op}-stderr.log".format(op=operationId), "create_time": run["metadata"]["createTime"]})
 
 			pipelineQueueUtils.acknowledge(method)
 

@@ -120,8 +120,10 @@ class PubsubMessageHandlers(object):
 			zone = log["resource"]["labels"]["zone"]
 			try:
 				operationId = compute.instances().get(project=config.project_id, zone=zone, instance=instance).execute()["description"].partition("Operation: ")[-1]
-			except HttpError:
-				pass
+
+			except HttpError as e:
+				PipelineSchedulerUtils.writeStderr("Couldn't get the operation id for instance {i} : {reason}".format(i=instance, reason=e))
+
 			else:
 				PipelineSchedulerUtils.writeStdout("Instance {i} (operation {o}) started!".format(i=instance, o=operationId))
 				pipelineDbUtils.updateJob(operationId, keyName="operation_id", setValues={"instance_name": instance})
