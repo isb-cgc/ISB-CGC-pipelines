@@ -83,7 +83,7 @@ class PubsubMessageHandlers(object):
 
 				if status["done"] and "error" not in status.keys():
 					PipelineSchedulerUtils.writeStdout("PIPELINE SUCCEEDED (pipeline: {pipeline}, tag: {tag}, operation: {operation})".format(pipeline=jobInfo[0].pipeline_name, tag=jobInfo[0].tag, operation=status["name"]))
-					pipelineDbUtils.updateJob(jobInfo[0].job_id, setValues={"current_status": "SUCCEEDED", "end_time": status["metadata"]["endTime"], "processing_time": processingTime})
+					pipelineDbUtils.updateJob(jobInfo[0].job_id, keyName="job_id", setValues={"current_status": "SUCCEEDED", "end_time": status["metadata"]["endTime"], "processing_time": processingTime})
 
 					if len(children) > 0:
 						for c in children:
