@@ -55,7 +55,7 @@ class PubsubMessageHandlers(object):
 				jobInfo = pipelineDbUtils.getJobInfo(select=["job_id", "pipeline_name", "tag", "create_time"], where={"operation_id": operationId})
 				children = [x[0] for x in pipelineDbUtils.getChildJobs(jobInfo[0].job_id)]
 
-				if config.restart_preempted:
+				if config.autorestart_preempted:
 					pipelineQueueUtils = PipelineQueueUtils()
 					jobInfo = pipelineDbUtils.getJobInfo(select=["request"], where={"operation_id": operationId})
 					pipelineQueueUtils.publish(jobInfo[0].request)
@@ -109,7 +109,7 @@ class PubsubMessageHandlers(object):
 									"request": childRequest
 								}
 								pipelineQueueUtils.publish(json.dumps(msg))
-								
+
 					else:
 						PipelineSchedulerUtils.writeStdout(
 							"Job {jobid} has no child jobs to check!".format(jobid=jobInfo[0].job_id))
