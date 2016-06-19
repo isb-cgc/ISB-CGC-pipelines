@@ -102,7 +102,7 @@ class PubsubMessageHandlers(object):
 									break
 
 							if totalParents == succeededParents:
-								childRequest = pipelineDbUtils.getJobInfo(select=["request"], where={"job_id": c})
+								childRequest = pipelineDbUtils.getJobInfo(select=["request"], where={"job_id": c})[0].request
 								pipelineQueueUtils.publish(childRequest)
 					else:
 						PipelineSchedulerUtils.writeStdout(

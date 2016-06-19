@@ -113,7 +113,6 @@ class PipelineBuilder(object):
 			exit(-1)
 
 	def _submitSchema(self):
-		pprint.pprint(self._dependencyMap)
 		jobIdMap = {}
 
 		for p in self._schema["pipelines"]:  # Add all jobs to the jobs table 
