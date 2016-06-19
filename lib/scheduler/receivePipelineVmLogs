@@ -102,8 +102,14 @@ class PubsubMessageHandlers(object):
 									break
 
 							if totalParents == succeededParents:
-								childRequest = pipelineDbUtils.getJobInfo(select=["request"], where={"job_id": c})[0].request
-								pipelineQueueUtils.publish(childRequest)
+								childRequest = json.loads(pipelineDbUtils.getJobInfo(select=["request"], where={"job_id": c})[0].request)
+
+								msg = {
+									"job_id": c,
+									"request": childRequest
+								}
+								pipelineQueueUtils.publish(json.dumps(msg))
+								
 					else:
 						PipelineSchedulerUtils.writeStdout(
 							"Job {jobid} has no child jobs to check!".format(jobid=jobInfo[0].job_id))
