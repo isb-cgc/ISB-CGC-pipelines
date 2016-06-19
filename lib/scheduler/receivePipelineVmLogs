@@ -4,9 +4,9 @@ import json
 import base64
 import httplib2
 import argparse
-import dateutil
 import threading
 from apiclient import discovery
+from dateutil.parser import parse
 from googleapiclient.errors import HttpError
 from oauth2client import client as oauth2client
 
@@ -28,8 +28,7 @@ class PubsubMessageHandlers(object):
 					break
 
 			if processingStart is not None:
-				processingTimeDelta = dateutil.parser.parse(status["metadata"]["endTime"]) - dateutil.parser.parse(
-					processingStart)
+				processingTimeDelta = parse(status["metadata"]["endTime"]) - parse(processingStart)
 				processingTime = processingTimeDelta.total_seconds()
 
 			return processingTime
