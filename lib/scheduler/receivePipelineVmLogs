@@ -53,8 +53,8 @@ class PubsubMessageHandlers(object):
 				processingTime = getProcessingTime(status)
 				pipelineDbUtils.updateJob(operationId, setValues={"current_status": "PREEMPTED", "end_time": status["metadata"]["endTime"], "processing_time": processingTime})
 
-				jobInfo = pipelineDbUtils.getJobInfo(select=["job_id", "pipeline_name", "tag", "create_time"], where={"operation_id": status["name"]})
-				children = [x for x in pipelineDbUtils.getChildJobs(jobInfo[0].job_id)]
+				jobInfo = pipelineDbUtils.getJobInfo(select=["job_id", "pipeline_name", "tag", "create_time"], where={"operation_id": operationId})
+				children = [x[0] for x in pipelineDbUtils.getChildJobs(jobInfo[0].job_id)]
 
 				if config.restart_preempted:
 					pipelineQueueUtils = PipelineQueueUtils()
@@ -79,8 +79,8 @@ class PubsubMessageHandlers(object):
 				status = genomics.operations().get(name="operations/{op}".format(op=operationId)).execute()
 				processingTime = getProcessingTime(status)
 
-				jobInfo = pipelineDbUtils.getJobInfo(select=["job_id", "pipeline_name", "tag", "create_time"], where={"operation_id": status["name"]})
-				children = [x for x in pipelineDbUtils.getChildJobs(jobInfo[0].job_id)]
+				jobInfo = pipelineDbUtils.getJobInfo(select=["job_id", "pipeline_name", "tag", "create_time"], where={"operation_id": operationId})
+				children = [x[0] for x in pipelineDbUtils.getChildJobs(jobInfo[0].job_id)]
 
 				if status["done"] and "error" not in status.keys():
 					PipelineSchedulerUtils.writeStdout("PIPELINE SUCCEEDED (pipeline: {pipeline}, tag: {tag}, operation: {operation})".format(pipeline=jobInfo[0].pipeline_name, tag=jobInfo[0].tag, operation=status["name"]))
