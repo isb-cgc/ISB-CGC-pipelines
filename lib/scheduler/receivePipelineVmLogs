@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-
+import re
 import json
 import base64
 import httplib2
@@ -48,7 +48,6 @@ class PubsubMessageHandlers(object):
 				PipelineSchedulerUtils.writeStderr("Instance {i} preempted, but no record exists in jobs database".format(i=instance))
 
 			else:
-				sleep(10)  # Need to wait for the status to be updated by the pipelines service
 				PipelineSchedulerUtils.writeStdout("Instance {i} (operation {o}) preempted!".format(i=instance, o=operationId))
 				status = genomics.operations().get(name="operations/{op}".format(op=operationId)).execute()
 
@@ -87,6 +86,7 @@ class PubsubMessageHandlers(object):
 			else:
 				operationId = jobInfo.operation_id
 				currentStatus = jobInfo.current_status
+
 				if not currentStatus == "PREEMPTED":
 					PipelineSchedulerUtils.writeStdout("Instance {i} (operation {o}) completed!".format(i=instance, o=operationId))
 					status = genomics.operations().get(name="operations/{op}".format(op=operationId)).execute()
@@ -129,11 +129,12 @@ class PubsubMessageHandlers(object):
 								"Job {jobid} has no child jobs to check!".format(jobid=jobInfo[0].job_id))
 
 					elif "error" in status.keys():
-						PipelineSchedulerUtils.writeStdout("PIPELINE FAILED ({job}): {reason}".format(job="{pipeline}-{tag}".format(pipeline=jobInfo[0].pipeline_name, tag=jobInfo[0].tag), reason=status["error"]["message"]))
-						pipelineDbUtils.updateJob(jobInfo[0].job_id, keyName="job_id", setValues={"current_status": "FAILED", "end_time": status["metadata"]["endTime"], "processing_time": processingTime})
-						if len(children) > 0:
-							PipelineSchedulerUtils.writeStderr("Couldn't start downstream jobs for job {j} ({pipeline}-{tag}) : status is FAILED".format(
-									j=jobInfo[0].job_id, pipeline=jobInfo[0].pipeline_name, tag=jobInfo[0].tag))
+						if not re.match('^14: VM .* stopped unexpectedly.$', status["error"]["msg"]):
+							PipelineSchedulerUtils.writeStdout("PIPELINE FAILED ({job}): {reason}".format(job="{pipeline}-{tag}".format(pipeline=jobInfo[0].pipeline_name, tag=jobInfo[0].tag), reason=status["error"]["message"]))
+							pipelineDbUtils.updateJob(jobInfo[0].job_id, keyName="job_id", setValues={"current_status": "FAILED", "end_time": status["metadata"]["endTime"], "processing_time": processingTime})
+							if len(children) > 0:
+								PipelineSchedulerUtils.writeStderr("Couldn't start downstream jobs for job {j} ({pipeline}-{tag}) : status is FAILED".format(
+										j=jobInfo[0].job_id, pipeline=jobInfo[0].pipeline_name, tag=jobInfo[0].tag))
 
 		elif log["jsonPayload"]["event_subtype"] == "compute.instances.insert":
 			zone = log["resource"]["labels"]["zone"]
