@@ -778,7 +778,7 @@ class PipelineSchedulerUtils(object):
 		else:
 			editor = "/usr/bin/nano"
 
-		if subprocess.Popen([editor, tmp]) == 0:
+		if subprocess.Popen([editor, tmp], stdin=open('/dev/tty', 'r')) == 0:
 			with open(tmp, 'r') as f:
 				request = json.load(f)
 
