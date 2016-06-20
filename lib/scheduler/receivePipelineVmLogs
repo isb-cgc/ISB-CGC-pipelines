@@ -173,7 +173,10 @@ def main(args, config):
 		if credentials.access_token_expired:
 			credentials.refresh(http)
 
-		resp = pubsub.projects().subscriptions().pull(subscription=subscription, body=body).execute()
+		try:
+			resp = pubsub.projects().subscriptions().pull(subscription=subscription, body=body).execute()
+		except HttpError as e:
+			PipelineSchedulerUtils.writeStderr("Couldn't pull from subscription {s} : {reason}".format(s=args.subscription, reason=e))
 
 		receivedMessages = resp.get('receivedMessages')
 		if receivedMessages is not None:
