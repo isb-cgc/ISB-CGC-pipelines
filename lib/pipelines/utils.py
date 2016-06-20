@@ -1,5 +1,6 @@
 import os
 import sys
+import uuid
 import pika
 import math
 import json
@@ -10,29 +11,347 @@ import pyinotify
 import subprocess
 from time import time
 from datetime import datetime
+from jsonspec.validators import load  # jsonspec is licensed under BSD
 from ConfigParser import SafeConfigParser, NoOptionError, NoSectionError
-from pipelines.schema import PipelineSchema
-from pipelines.builder import PipelineBuilder
 
 from googleapiclient.errors import HttpError
 
 MODULE_PATH = "/usr/local/ISB-CGC-pipelines/lib"  # TODO: move path to configuration file
 
-# Kubernetes API Access
-API_ROOT = "http://localhost:8080"
-NAMESPACE_URI = "/api/v1/namespaces/"
-PODS_URI = "/api/v1/namespaces/{namespace}/pods/"
-SERVICES_URI = "/api/v1/namespaces/{namespace}/services/"
-REPLICATION_CONTROLLERS_URI = "/api/v1/namespaces/{namespace}/replicationcontrollers/"
-PERSISTENT_VOLUMES_URI = "/api/v1/persistentvolumes/"
-PERSISTENT_VOLUME_CLAIMS_URI = "/api/v1/namespaces/{namespace}/persistentvolumeclaims/"
-SECRETS_URI = "/api/v1/namespaces/{namespace}/secrets/"
 
-K8S_SESSION = requests.Session()
-API_HEADERS = {
-	"Content-type": "application/json",
-	"Authorization": "Bearer {access_token}"
-}
+class PipelineSchema(object):
+	def __init__(self, name, config, logsPath, imageName, scriptUrl=None, cmd=None, cores=1, mem=1, diskSize=None,
+	             diskType=None, env=None, inputs=None, outputs=None, tag=None, children=None, metadata=None,
+	             preemptible=False):  # config must be an instance of pipelines.utils.PipelinesConfig
+		self.name = name
+
+		if tag is None:
+			tag = str(uuid.uuid4())
+
+		self.tag = tag
+		self._schema = {
+			"name": name,
+			"tag": tag,
+			"children": [],
+			"request": {
+				"pipelineArgs": {
+					"projectId": config.project_id,
+					"resources": {
+						"disks": [],
+						"zones": config.zones.split(',')
+					},
+					"logging": {},
+					"inputs": {},
+					"outputs": {},
+					"serviceAccount": {
+						"email": config.service_account_email,
+						"scopes": config.scopes.split(',')
+					}
+				},
+				"ephemeralPipeline": {
+					"name": name,
+					"projectId": config.project_id,
+					"inputParameters": [],
+					"outputParameters": [],
+					"resources": {
+						"disks": [],
+						"zones": config.zones.split(',')
+					},
+					"docker": {}
+				}
+			}
+		}
+		self._metadata = {}
+
+		# if disk info provided, add a disk
+		if diskSize is not None:
+			mountPath = "/{pipeline}".format(pipeline=name)
+			if diskType is None:
+				diskType = "PERSISTENT_SSD"
+
+			self.addDisk(name, diskType, diskSize, mountPath)
+
+		# add inputs
+		# TODO: input validation
+		if inputs is not None:
+			inputMap = {':'.join(pair.split(':')[0:-1]): pair.split(':')[-1] for pair in inputs.split(',')}
+
+			for i, k in enumerate(inputMap.keys()):
+				inputName = "input{N}".format(N=i)
+				self.addInput(inputName, name, inputMap[k], k)
+
+		# add outputs
+		# TODO: input validation
+		if outputs is not None:
+			outputMap = {pair.split(':')[0]: ':'.join(pair.split(':')[1:]) for pair in outputs.split(',')}
+
+			for i, k in enumerate(outputMap.keys()):
+				outputName = "output{N}".format(N=i)
+				self.addOutput(outputName, name, k, outputMap[k])
+
+		# set log output path
+		self.setLogOutput(logsPath)
+
+		# set resources
+		self.setCpu(cores)
+		self.setMem(mem)
+
+		# prepare environment string
+		# TODO: set some default config variables in the envString (i.e., JOBNAME)
+		if env is not None:
+			envString = " ".join(env.split(',')) + " "
+		else:
+			envString = ""
+
+		# set docker
+		self.setImage(imageName)
+		if scriptUrl is not None:
+			script = os.path.basename(scriptUrl)
+			self.addInput("pipelineScript", name, script, scriptUrl)
+			command = (
+				'cd {mnt} && ls && '
+				'chmod u+x {script} && '
+				'{env}./{script}'
+			).format(mnt=mountPath, script=script, env=envString)
+		elif cmd is not None:
+			command = (
+				'cd {mnt} && '
+				'{env}{cmd}'
+			).format(mnt=mountPath, env=envString, cmd=cmd)
+
+		self.setCmd(command)
+
+		# set preemptibility
+		self.setPreemptible(preemptible)
+
+		# set metadata
+		if metadata is not None:
+			metadataMap = {pair.split('=')[0]: pair.split('=')[1].split(',') for pair in metadata.split(',')}
+			self.addSchemaMetadata(**metadataMap)
+
+		# set children
+		if children is not None:
+			childList = ','.split(children)
+
+			for c in childList:
+				self.addChild(c)
+
+	def getSchema(self):
+		return self._schema
+
+	def addChild(self, child):
+		self._schema["children"].append(child.name)
+
+	def addInput(self, name, disk, localPath, gcsPath):
+		self._schema["request"]["pipelineArgs"]["inputs"][name] = gcsPath
+
+		self._schema["request"]["ephemeralPipeline"]["inputParameters"].append({
+			"name": name,
+			"localCopy": {
+				"path": localPath,
+				"disk": disk
+			}
+		})
+
+	def addOutput(self, name, disk, localPath, gcsPath):
+		self._schema["request"]["pipelineArgs"]["outputs"][name] = gcsPath
+
+		self._schema["request"]["ephemeralPipeline"]["outputParameters"].append({
+			"name": name,
+			"localCopy": {
+				"path": localPath,
+				"disk": disk
+			}
+		})
+
+	def addDisk(self, name, diskType, sizeGb, mountPath, autoDelete=True, readOnly=False):
+		self._schema["request"]["pipelineArgs"]["resources"]["disks"].append({
+			"name": name,
+			"type": diskType,
+			"sizeGb": sizeGb,
+			"autoDelete": autoDelete,
+			"readOnly": readOnly
+		})
+		self._schema["request"]["ephemeralPipeline"]["resources"]["disks"].append({
+			"name": name,
+			"type": diskType,
+			"sizeGb": sizeGb,
+			"autoDelete": autoDelete,
+			"readOnly": readOnly,
+			"mountPoint": mountPath
+		})
+
+	def setLogOutput(self, gcsPath):
+		self._schema["request"]["pipelineArgs"]["logging"]["gcsPath"] = gcsPath
+
+	def setMem(self, memGb):
+		self._schema["request"]["pipelineArgs"]["resources"]["minimumRamGb"] = memGb
+		self._schema["request"]["ephemeralPipeline"]["resources"]["minimumRamGb"] = memGb
+
+	def setCpu(self, cores):
+		self._schema["request"]["pipelineArgs"]["resources"]["minimumCpuCores"] = cores
+		self._schema["request"]["ephemeralPipeline"]["resources"]["minimumCpuCores"] = cores
+
+	def setBootDiskSize(self, sizeGb):
+		self._schema["request"]["pipelineArgs"]["resources"]["bootDiskSizeGb"] = sizeGb
+		self._schema["request"]["ephemeralPipeline"]["resources"]["bootDiskSizeGb"] = sizeGb
+
+	def setPreemptible(self, preemptible):
+		self._schema["request"]["pipelineArgs"]["resources"]["preemptible"] = preemptible
+		self._schema["request"]["ephemeralPipeline"]["resources"]["preemptible"] = preemptible
+
+	def setImage(self, imageName):
+		self._schema["request"]["ephemeralPipeline"]["docker"]["imageName"] = imageName
+
+	def setCmd(self, cmdString):
+		self._schema["request"]["ephemeralPipeline"]["docker"]["cmd"] = cmdString
+
+	def addSchemaMetadata(self, **kwargs):
+		self._metadata.update(**kwargs)
+
+	def getSchemaMetadata(self, key):
+		if key in self._metadata.keys():
+			return self._metadata[key]
+		else:
+			raise LookupError("Metadata key '{k}' not found".format(k=key))
+
+
+class PipelineBuilder(object):
+	def __init__(self, config):
+		self._pipelines = []
+		self._schema = {}
+		self._config = config
+		self._dependencyMap = {}
+		self._pipelineDbUtils = PipelineDbUtils(self._config)
+		self._pipelineQueueUtils = PipelineQueueUtils()
+
+	def addStep(self, root):  # root must be an instance of PipelineSchema
+		if self.hasStep(root.name):
+			raise ValueError("Pipeline already contains a step with name {n}".format(n=root.name))
+
+		self._dependencyMap[root.name] = root.getSchema()
+
+		self._pipelines.append(self._dependencyMap[root.name])
+
+	def hasStep(self, stepName):
+		hasStep = False
+		for p in self._pipelines:
+			if p == stepName:
+				hasStep = True
+
+		return hasStep
+
+	def run(self):
+		# generate schema
+		self._generateSchema()
+
+		# schema validation
+		self._validateSchema()
+
+		# initialize job configs
+		self._submitSchema()
+
+	def _generateSchema(self):
+		self._schema.update({"pipelines": self._pipelines})
+
+	def _validateSchema(self):  # TODO: add fields for default values for inputs if there are no parents
+		try:
+			jobs = self._schema["pipelines"]
+		except KeyError as e:
+			print "There was a problem getting the list of pipelines from the specification"
+			exit(-1)
+
+		jobNames = []
+		for job in jobs:
+			jobNames.append(job["name"])
+
+		if len(jobNames) != len(set(jobNames)):
+			print "ERROR: pipeline names must be unique"
+			exit(-1)
+
+		for job in jobs:
+			if "children" in job.keys() and "parents" not in job.keys():
+				for child in job["children"]:
+					if child not in jobNames:
+						print "ERROR: job '{jobName}' specifies a child that doesn't exist".format(jobName=job["name"])
+						exit(-1)
+
+		pipelineSchema = {
+			"description": "Pipeline Graph Schema",
+			"type": "object",
+			"properties": {
+				"pipelines": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"additionalProperties": {"$ref": "#/definitions/pipeline"},
+					}
+				}
+			},
+			"definitions": {
+				"pipeline": {
+					"name": {
+						"description": "The name of the pipeline to run on an input file",
+						"type": "string",
+						"required": True
+					},
+					"tag": {
+						"description": "An arbitrary identifier for the pipeline",
+						"type": "string",
+						"required": True
+					},
+					"children": {
+						"description": "The names of the child pipelines, if there are any -- must exist in the 'pipelines' array",
+						"type": "array",
+						"items": {
+							"type": "string"
+						},
+						"required": False
+					},
+					"request": {
+						"description": "The Google Genomics Pipelines API request object",
+						"type": "object"  # TODO: schema validation for the request object
+					}
+				}
+			}
+		}
+
+		validator = load(pipelineSchema)
+		validator.validate(self._schema)
+		try:
+			validator.validate(self._schema)
+		except:  # what kind of exception?
+			exit(-1)
+
+	def _submitSchema(self):
+		jobIdMap = {}
+
+		for p in self._schema["pipelines"]:  # Add all jobs to the jobs table
+			jobIdMap[p["name"]] = self._pipelineDbUtils.insertJob(None, None, p["name"], p["tag"], None, 0,
+			                                                      p["request"]["pipelineArgs"]["logging"]["gcsPath"],
+			                                                      None, None, None, None, None,
+			                                                      json.dumps(p["request"]))
+
+		for p in self._schema["pipelines"]:  # Add dependency info to the job dependency table
+			if "children" in p.keys() and len(p["children"]) > 0:
+				for c in p["children"]:
+					parentId = jobIdMap[p["name"]]
+					childId = jobIdMap[c]
+					self._pipelineDbUtils.insertJobDependency(parentId, childId)
+
+		for p in self._schema["pipelines"]:  # schedule pipelines
+			parents = self._pipelineDbUtils.getParentJobs(jobIdMap[p["name"]])
+			self._pipelineDbUtils.updateJob(jobIdMap[p["name"]], setValues={"current_status": "WAITING"},
+			                                keyName="job_id")
+
+			# if the job is a root job, send the job request to the queue
+			msg = {
+				"job_id": jobIdMap[p["name"]],
+				"request": p["request"]
+			}
+
+			if len(parents) == 0:
+				self._pipelineQueueUtils.publish(json.dumps(msg))
 
 
 class PipelinesConfig(SafeConfigParser, object):

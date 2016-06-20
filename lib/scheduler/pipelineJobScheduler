@@ -13,7 +13,7 @@ from pipelines.utils import PipelinesConfig, PipelineSchedulerUtils, PipelineDbU
 # NOTE: this process should be started up as part of the scheduling system (managed by Supervisor)
 
 
-def main(args, config):
+def main(config):
 	# authenticate
 	credentials = GoogleCredentials.get_application_default()
 	http = httplib2.Http()
@@ -106,7 +106,7 @@ if __name__ == "__main__":
 	t.daemon = True
 	t.start()
 
-	main(args, config)
+	main(config)
 	t.join()
 
 
