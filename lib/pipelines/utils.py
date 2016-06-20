@@ -10,6 +10,7 @@ import argparse
 import pyinotify
 import subprocess
 from time import time
+from tempfile import mkstemp
 from datetime import datetime
 from jsonspec.validators import load  # jsonspec is licensed under BSD
 from ConfigParser import SafeConfigParser, NoOptionError, NoSectionError
@@ -761,6 +762,29 @@ class PipelineSchedulerUtils(object):
 
 		else:
 			print "No jobs found"
+
+	@staticmethod
+	def editPipeline(args, config):
+		pipelineDbUtils = PipelineDbUtils(config)
+
+		request = json.loads(pipelineDbUtils.getJobInfo(select=["request"], where={"job_id": args.jobId})[0].request)
+
+		tmp = mkstemp()
+		with open(tmp, 'w') as f:
+			f.write("{data}".format(data=json.dumps(request, indent=4)))
+
+		if "EDITOR" in os.environ.keys():
+			editor = os.environ["EDITOR"]
+		else:
+			editor = "/usr/bin/nano"
+
+		edit = subprocess.Popen(editor, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True, stdin=open(tmp))
+		edit.wait()
+
+		with open(tmp, 'r') as f:
+			request = json.load(f)
+
+		pipelineDbUtils.updateJob(args.jobId, keyName="job_id", setValues={"request": json.dumps(request)})
 
 	@staticmethod
 	def writeStdout(s):

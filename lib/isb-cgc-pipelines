@@ -41,6 +41,10 @@ def main(args, unknown):
 		config = PipelinesConfig(PIPELINES_CONFIG_PATH)
 		PipelineSchedulerUtils.submitPipeline(args, config)
 
+	if args.subcommand == "edit":
+		config = PipelinesConfig(PIPELINES_CONFIG_PATH)
+		PipelineSchedulerUtils.editPipeline(args, config)
+
 	elif args.subcommand == "stop":
 		config = PipelinesConfig(PIPELINES_CONFIG_PATH)
 		PipelineSchedulerUtils.stopPipeline(args, unknown, config)
@@ -103,6 +107,9 @@ if __name__ == "__main__":
 	submit.add_argument("--env", required=False, default=None)
 	submit.add_argument("--tag", required=False, default=None)
 	submit.add_argument("--preemptible", action="store_true", default=False)
+
+	edit = subparsers.add_parser("edit")
+	edit.add_argument("--jobId")
 
 	stop = subparsers.add_parser("delete")
 	stopGrp = stop.add_mutually_exclusive_group()
