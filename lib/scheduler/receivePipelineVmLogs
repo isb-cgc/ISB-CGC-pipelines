@@ -5,6 +5,7 @@ import base64
 import httplib2
 import argparse
 import threading
+from time import sleep
 from apiclient import discovery
 from dateutil.parser import parse
 from googleapiclient.errors import HttpError
@@ -47,8 +48,14 @@ class PubsubMessageHandlers(object):
 				PipelineSchedulerUtils.writeStderr("Instance {i} preempted, but no record exists in jobs database".format(i=instance))
 
 			else:
+				sleep(10)  # Need to wait for the status to be updated by the pipelines service
 				PipelineSchedulerUtils.writeStdout("Instance {i} (operation {o}) preempted!".format(i=instance, o=operationId))
 				status = genomics.operations().get(name="operations/{op}".format(op=operationId)).execute()
+
+				while "endTime" not in status["metadata"].keys():
+					sleep(5)
+					status = genomics.operations().get(name="operations/{op}".format(op=operationId)).execute()
+
 				processingTime = getProcessingTime(status)
 				pipelineDbUtils.updateJob(operationId, setValues={"current_status": "PREEMPTED", "end_time": status["metadata"]["endTime"], "processing_time": processingTime})
 
