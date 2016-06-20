@@ -57,8 +57,12 @@ class PubsubMessageHandlers(object):
 
 				if config.autorestart_preempted:
 					pipelineQueueUtils = PipelineQueueUtils()
-					jobInfo = pipelineDbUtils.getJobInfo(select=["request"], where={"operation_id": operationId})
-					pipelineQueueUtils.publish(jobInfo[0].request)
+					jobInfo = pipelineDbUtils.getJobInfo(select=["request", "job_id"], where={"operation_id": operationId})
+					msg = {
+						"job_id": jobInfo[0].job_id,
+						"request": jobInfo[0].request
+					}
+					pipelineQueueUtils.publish(json.dumps(msg))
 				else:
 					if len(children) > 0:
 						PipelineSchedulerUtils.writeStderr(
