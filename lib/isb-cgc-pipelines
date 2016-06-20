@@ -285,7 +285,7 @@ if __name__ == "__main__":
 
 	restart = subparsers.add_parser("restart")
 	restartGrp = restart.add_mutually_exclusive_group()
-	restartGrp.add_argument("--jobIds")
+	restartGrp.add_argument("--jobId")
 	restartGrp.add_argument("--preempted", action="store_true")
 
 	logs = subparsers.add_parser("logs")
