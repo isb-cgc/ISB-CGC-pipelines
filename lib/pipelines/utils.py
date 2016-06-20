@@ -778,13 +778,14 @@ class PipelineSchedulerUtils(object):
 		else:
 			editor = "/usr/bin/nano"
 
-		edit = subprocess.Popen(editor, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True, stdin=open(tmp))
-		edit.wait()
+		if subprocess.Popen([editor, tmp]) == 0:
+			with open(tmp, 'r') as f:
+				request = json.load(f)
 
-		with open(tmp, 'r') as f:
-			request = json.load(f)
-
-		pipelineDbUtils.updateJob(args.jobId, keyName="job_id", setValues={"request": json.dumps(request)})
+			pipelineDbUtils.updateJob(args.jobId, keyName="job_id", setValues={"request": json.dumps(request)})
+		else:
+			print "ERROR: there was a problem editing the request"
+			exit(-1)
 
 	@staticmethod
 	def writeStdout(s):
