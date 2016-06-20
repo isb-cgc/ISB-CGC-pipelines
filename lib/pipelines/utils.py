@@ -769,7 +769,7 @@ class PipelineSchedulerUtils(object):
 
 		request = json.loads(pipelineDbUtils.getJobInfo(select=["request"], where={"job_id": args.jobId})[0].request)
 
-		tmp = mkstemp()
+		_, tmp = mkstemp()
 		with open(tmp, 'w') as f:
 			f.write("{data}".format(data=json.dumps(request, indent=4)))
 
