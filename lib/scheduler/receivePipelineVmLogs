@@ -59,7 +59,7 @@ class PubsubMessageHandlers(object):
 					jobInfo = pipelineDbUtils.getJobInfo(select=["request", "job_id"], where={"operation_id": operationId})
 					msg = {
 						"job_id": jobInfo[0].job_id,
-						"request": jobInfo[0].request
+						"request": json.loads(jobInfo[0].request)
 					}
 					pipelineQueueUtils.publish(json.dumps(msg))
 				else:
