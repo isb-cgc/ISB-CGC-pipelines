@@ -853,7 +853,7 @@ class PipelineDbUtils(object):
 
 	def updateJob(self, key, setValues, keyName="operation_id"):  # setValues -> dict
 		if "preemptions" in setValues.keys():
-			query = "UPDATE jobs SET preemptions = preemptions + 1 WHERE ? = ?".format(key=keyName)
+			query = "UPDATE jobs SET preemptions = preemptions + 1 WHERE {key} = ?".format(key=keyName)
 			self._pipelinesDb.execute(query, (key,))
 			setValues.pop("preemptions")
 

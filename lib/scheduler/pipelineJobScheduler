@@ -88,7 +88,7 @@ def main(config):
 			else:
 				operationId = run["name"].split("/")[-1]
 				PipelineSchedulerUtils.writeStdout("Operation submitted: {op}".format(op=operationId))
-				pipelineDbUtils.updateJob(body["job_id"], keyName="job_id", setValues={"current_status": "RUNNING", "operation_id": operationId, "stdout_log": "{op}-stdout.log".format(op=operationId), "stderr_log": "{op}-stderr.log".format(op=operationId), "create_time": run["metadata"]["createTime"]})
+				pipelineDbUtils.updateJob(body["job_id"], keyName="job_id", setValues={"current_status": "RUNNING", "operation_id": operationId, "stdout_log": "{op}-stdout.log".format(op=operationId), "stderr_log": "{op}-stderr.log".format(op=operationId), "create_time": run["metadata"]["createTime"], "end_time": None, "processing_time": None})
 
 			pipelineQueueUtils.acknowledge(method)
 

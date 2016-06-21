@@ -5,7 +5,6 @@ import base64
 import httplib2
 import argparse
 import threading
-from time import sleep
 from apiclient import discovery
 from dateutil.parser import parse
 from googleapiclient.errors import HttpError
@@ -49,16 +48,10 @@ class PubsubMessageHandlers(object):
 
 			else:
 				PipelineSchedulerUtils.writeStdout("Instance {i} (operation {o}) preempted!".format(i=instance, o=operationId))
-				status = genomics.operations().get(name="operations/{op}".format(op=operationId)).execute()
-
-				while "endTime" not in status["metadata"].keys():
-					sleep(5)
-					status = genomics.operations().get(name="operations/{op}".format(op=operationId)).execute()
-
-				processingTime = getProcessingTime(status)
-				pipelineDbUtils.updateJob(operationId, setValues={"current_status": "PREEMPTED", "end_time": status["metadata"]["endTime"], "processing_time": processingTime})
-
 				jobInfo = pipelineDbUtils.getJobInfo(select=["job_id", "pipeline_name", "tag", "create_time"], where={"operation_id": operationId})
+
+				pipelineDbUtils.updateJob(jobInfo[0].job_id, keyName="job_id", setValues={"current_status": "PREEMPTED", "preemptions": 1})
+
 				children = [x[0] for x in pipelineDbUtils.getChildJobs(jobInfo[0].job_id)]
 
 				if config.autorestart_preempted:
@@ -88,9 +81,10 @@ class PubsubMessageHandlers(object):
 				currentStatus = jobInfo.current_status
 
 				if not currentStatus == "PREEMPTED":
-					PipelineSchedulerUtils.writeStdout("Instance {i} (operation {o}) completed!".format(i=instance, o=operationId))
 					status = genomics.operations().get(name="operations/{op}".format(op=operationId)).execute()
 					processingTime = getProcessingTime(status)
+
+					PipelineSchedulerUtils.writeStdout("Instance {i} (operation {o}) completed!".format(i=instance, o=operationId))
 
 					jobInfo = pipelineDbUtils.getJobInfo(select=["job_id", "pipeline_name", "tag", "create_time"], where={"operation_id": operationId})
 					children = [x[0] for x in pipelineDbUtils.getChildJobs(jobInfo[0].job_id)]
@@ -129,7 +123,7 @@ class PubsubMessageHandlers(object):
 								"Job {jobid} has no child jobs to check!".format(jobid=jobInfo[0].job_id))
 
 					elif "error" in status.keys():
-						if not re.match('^14: VM .* stopped unexpectedly.$', status["error"]["message"]):
+						if not re.match('^14: VM .* stopped unexpectedly\.$', status["error"]["message"]):
 							PipelineSchedulerUtils.writeStdout("PIPELINE FAILED ({job}): {reason}".format(job="{pipeline}-{tag}".format(pipeline=jobInfo[0].pipeline_name, tag=jobInfo[0].tag), reason=status["error"]["message"]))
 							pipelineDbUtils.updateJob(jobInfo[0].job_id, keyName="job_id", setValues={"current_status": "FAILED", "end_time": status["metadata"]["endTime"], "processing_time": processingTime})
 							if len(children) > 0:
