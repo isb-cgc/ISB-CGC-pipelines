@@ -187,6 +187,33 @@ Another alternative way to find information about your submitted task is to quer
 gcloud alpha genomics operations describe <OPERATION_ID>
 ```
 
+## Cancelling Jobs
+
+If you'd like to stop a job (or set of jobs), you can run one of the following variations of the `isb-cgc-pipelines stop` subcommand:
+
+```
+isb-cgc-pipelines stop --jobId <jobId> # stops a single job by id
+
+isb-cgc-pipelines stop --pipeline <pipelineName>  # stops any job with the given name
+
+isb-cgc-pipelines stop --tag <tag>  # stops any job with the given tag
+
+```
+
+If the job is in the "RUNNING" state, the job will be killed during processing.  If the job is still in the "WAITING" state, it will not be submitted in the future.
+
+## Handling Failures
+
+There are two main categories of situations in which a submitted job will fail.  The most obvious case is the one where the job itself is specified incorrectly (input or output locations are invalid, the Docker image doesn't exist at the specified location, the container script contains a bug, etc.), in which case the monitoring system will report that the status of the job is "FAILED". 
+
+The other situation arises if a VM is preempted, which is only relevant if you've set the "--preemptible" flag for the particular job.  In this situation, a job may be cut short (i.e., preempted) by Google Compute Engine for a variety of reasons, some of which may be unrelated to the way that the job was specified by the user.  In addition to the fact that preemptible VMs have a maximum lifetime of 24 hours, a VM may also be preempted at random or if it is using too many resources.
+
+The number of preemptions for any particular job will be listed in the far right-hand column of the output of the `isb-cgc-pipelines list jobs ...` command.  If you decided to set preempted jobs to restart automatically in the tool's configuration, this number will increase each time a job is preempted and subsequently restarted.  You can use this information to determine the appropriate course of action when jobs are preempted -- if a job is only preempted once before succeeding, you can probably assume that the VM was preempted at random.  However, if you notice that a job is frequently preempted, this may be a sign that the job is consistently attempting to use more resources than it requested and you may need to modify future submissions of that particular job in order for it to run to completion.
+
+In either case (preemption or outright failure), you can modify the job request sent to the Google Genomics Pipelines API Service by hand by running `isb-cgc-pipelines edit --jobId <jobId>`.  This will open the request as a file in the default editor on your system if the $EDITOR variable is set, and will use `/usr/bin/nano` otherwise.  Once you've made your edits, saved and quit, the modified request will be ingested back into the jobs database so that future restarts of that job will use the modified request.  
+
+In the case of a job that has been frequently preempted, you will need to wait for the job's next preemption to see the change take effect.  For jobs with a "FAILED" status, you will need to restart the job manually by running `isb-cgc-pipelines restart <jobId>`.
+
 ## Advanced Usage
 
 This section covers some more advanced use cases, such as running a DAG or sequence of tasks.  For this particular use case, you can use the underlying API directly to create more complicated workflows.
