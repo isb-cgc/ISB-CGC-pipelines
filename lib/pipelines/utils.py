@@ -620,15 +620,15 @@ class PipelineSchedulerUtils(object):
 		pipelineDbUtils = PipelineDbUtils(config)
 
 		if args.jobId:
-			jobInfo = pipelineDbUtils.getJobInfo(select=["current_status", "operation_id"],
+			jobInfo = pipelineDbUtils.getJobInfo(select=["current_status", "operation_id", "job_id"],
 			                                     where={"job_id": args.jobId})
 
 		elif args.pipeline:
-			jobInfo = pipelineDbUtils.getJobInfo(select=["current_status", "operation_id"],
+			jobInfo = pipelineDbUtils.getJobInfo(select=["current_status", "operation_id", "job_id"],
 			                                     where={"pipeline_name": args.pipeline})
 
 		elif args.tag:
-			jobInfo = pipelineDbUtils.getJobInfo(select=["current_status", "operation_id"],
+			jobInfo = pipelineDbUtils.getJobInfo(select=["current_status", "operation_id", "job_id"],
 			                                     where={"tag": args.tag})
 
 		for j in jobInfo:
