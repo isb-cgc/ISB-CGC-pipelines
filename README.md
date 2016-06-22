@@ -105,6 +105,8 @@ To stop the scheduler:
 
 Before you can run any jobs, you will need to make sure that you have read and write access to at least one Google Cloud Storage bucket for storing logs and outputs.  You can run the `gsutil mb` command to create a new bucket from the command line, or you can also use the "Create Bucket" button from the Cloud Storage section of the Cloud Console.
 
+For more information about making buckets using `gsutil`, refer to the [official documentation](https://cloud.google.com/storage/docs/gsutil/commands/mb).
+
 ### Submitting a Task
 
 To submit a task, you can use the `submit` subcommand, which takes the following possible arguments:
