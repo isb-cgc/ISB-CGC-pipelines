@@ -19,7 +19,7 @@ Understanding of the following technologies and topics will be essential for suc
 
 ## Service Account Configuration
 
-Note: The steps in this section require "Owner" status to complete.
+Note: The steps in this section require "Owner" status on a Google Cloud Project.
 
 Once you've enabled the APIs mentioned above, you will need to modify the permissions for two service accounts within your project: the default "compute" service account, which is created for you by default when you enable the Compute Engine API, and the "cloud-logs" service account, which you may need to create manually  in order to manage some logging tasks associated with your pipeline jobs. 
 
