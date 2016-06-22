@@ -632,7 +632,8 @@ class PipelineSchedulerUtils(object):
 			                                     where={"tag": args.tag})
 
 		for j in jobInfo:
-			pipelineDbUtils.updateJob(j.job_id, keyName="job_id", setValues={"current_status": "CANCELLED"})
+			if j.current_status not in ["SUCCEEDED", "FAILED", "PREEMPTED"]:
+				pipelineDbUtils.updateJob(j.job_id, keyName="job_id", setValues={"current_status": "CANCELLED"})
 
 			if j.current_status == "RUNNING":
 				cancelOperation(j.operation_id)
