@@ -47,7 +47,7 @@ def main(args, unknown):
 
 	elif args.subcommand == "stop":
 		config = PipelinesConfig(PIPELINES_CONFIG_PATH)
-		PipelineSchedulerUtils.stopPipeline(args, unknown, config)
+		PipelineSchedulerUtils.stopPipeline(args, config)
 
 	elif args.subcommand == "restart":
 		config = PipelinesConfig(PIPELINES_CONFIG_PATH)
@@ -111,10 +111,11 @@ if __name__ == "__main__":
 	edit = subparsers.add_parser("edit")
 	edit.add_argument("--jobId")
 
-	stop = subparsers.add_parser("delete")
+	stop = subparsers.add_parser("stop")
 	stopGrp = stop.add_mutually_exclusive_group()
-	stopGrp.add_argument("--jobIds")
+	stopGrp.add_argument("--jobId")
 	stopGrp.add_argument("--pipeline")
+	stopGrp.add_argument("--tag")
 
 	restart = subparsers.add_parser("restart")
 	restartGrp = restart.add_mutually_exclusive_group()

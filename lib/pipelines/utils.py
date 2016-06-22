@@ -613,8 +613,30 @@ class PipelineSchedulerUtils(object):
 		pipelineBuilder.run()
 
 	@staticmethod
-	def stopPipeline(args, unknown, config):  # TODO: implement
-		pass
+	def stopPipeline(args, config):  # TODO: implement
+		def cancelOperation(operationId):
+			pass
+
+		pipelineDbUtils = PipelineDbUtils(config)
+
+		if args.jobId:
+			jobInfo = pipelineDbUtils.getJobInfo(select=["current_status", "operation_id"],
+			                                     where={"job_id": args.jobId})
+
+		elif args.pipeline:
+			jobInfo = pipelineDbUtils.getJobInfo(select=["current_status", "operation_id"],
+			                                     where={"pipeline_name": args.pipeline})
+
+		elif args.tag:
+			jobInfo = pipelineDbUtils.getJobInfo(select=["current_status", "operation_id"],
+			                                     where={"tag": args.tag})
+
+		for j in jobInfo:
+			pipelineDbUtils.updateJob(j.job_id, keyName="job_id", setValues={"current_status": "CANCELLED"})
+
+			if j.current_status == "RUNNING":
+				cancelOperation(j.operation_id)
+
 
 	@staticmethod
 	def restartJobs(args, config):  # TODO: reimplement
