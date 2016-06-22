@@ -5,7 +5,7 @@ A framework for running bioinformatic workflows and pipelines at scale using the
 ## Prerequisites
 
 In order to use the ISB-CGC-pipelines tools, the following requirements must be met:
-- You must be an "Owner" or "Editor" of a Google Cloud Project.  Some initial configuration steps will require "Owner" status, but all tool usage will only require "Editor" status.
+- You must be an "Owner" or "Editor" of a Google Cloud Project.  Some initial configuration steps will require "Owner" status, but use of the command line tool and underlying API will only require "Editor" status.
 - You must have the following APIs enabled in your Google Cloud Project: Google Compute Engine, Google Genomics, Google Cloud Pub/Sub, Google Cloud Logging
 - (Optional) Install the Google Cloud SDK, including "alpha" subcommands for the `gcloud` command.  This step isn't required if you plan to use a Google Compute Engine VM for running the tool.
 
@@ -26,30 +26,14 @@ Once both of the required service accounts have been created, they must be grant
 
 To grant a role to an existing service account, simply click on the dropdown to the right of the particular service account name, check the roles that you wish to grant, and then click "Save".
 
-## Installation
+## Workstation Setup
 
-### Method 1: Local Installation
+### Method 1: Cloud Installation
 
-To install the tools manually, run the following commands:
-
-```
-# clone the repo
-
-git clone https://github.com/isb-cgc/ISB-CGC-pipelines.git
-
-# install
-
-cd ISB-CGC-pipelines && sudo ./install.sh
-```
-
-### Method 2: Use a startup script on Google Compute Engine
-
-A special startup script has been developed by the ISB for installing some common tools in an automated fashion on a Google Compute Engine VM.  ISB-CGC-pipelines is installed by default when the startup script is used to bootstrap a VM.  
-
-To use the startup script, make sure that your current workstation is equipped with the Google Cloud SDK and then run the following command (or a variation thereof) to start the bootstrapping process:
+The easiest way to set up the ISB-CGC-pipelines framework is to use the tool's Compute Engine startup script to bootstrap a the workstation.  To do this, you can run the following command (or a variation thereof) to create the workstation:
 
 ```
-gcloud compute instances create my-pipeline-workstation --metadata startup-script-url=gs://isb-cgc-open/vm-startup-scripts/isb-cgc-workstation-startup.sh
+gcloud compute instances create my-pipeline-workstation --metadata startup-script-url=gs://isb-cgc-open/vm-startup-scripts/isb-cgc-pipelines-startup.sh
 ```
 
 Once the instance is ready, you can ssh to it using the following command:
@@ -58,7 +42,26 @@ Once the instance is ready, you can ssh to it using the following command:
 gcloud compute ssh my-pipeline-workstation
 ```
 
-For more information about the `gcloud compute` command and all of its possible arguments, please refer to the [documentation](https://cloud.google.com/compute/docs/gcloud-compute/).
+For more information about the `gcloud compute` command and all of its possible arguments, please refer to the [documentation](https://cloud.google.com/compute/docs/gcloud-compute/). 
+
+
+### Method 2: Local Installation
+
+To install the tool locally, you can run the same startup script used above on your local workstation by running the following commands:
+
+```
+# make sure git is installed
+
+sudo apt-get update && sudo apt-get install git
+
+# clone the repo
+
+git clone https://github.com/isb-cgc/ISB-CGC-pipelines.git
+
+# run the startup script
+
+cd ISB-CGC-pipelines && sudo ./instance-startup.sh
+```
 
 ## Basic Usage
 
@@ -70,9 +73,23 @@ First, update PYTHONPATH:
 
 `export PYTHONPATH=$PYTHONPATH:/usr/local/ISB-CGC-pipelines/lib`
 
-To configure the tool, run the following command and follow the prompts:
+You will also need to add yourself to the `supervisor` user group in order to start and stop the job scheduler:
+
+```
+# run the following command, and then log out and log back in again for the change to take effect
+
+sudo usermod -a -G supervisor $USER
+```
+
+To configure the framework, run the following command and follow the prompts:
 
 `isb-cgc-pipelines config set all`
+
+Most of the values accepted will provide a suitable default value that you can use by simply pressing enter at each prompt.  The only exception to this is the value for the GCP project id, which must be provided by you during the configuration process.
+
+There is one last configuration step, which is to "bootstrap" the messaging system that underlies the job scheduling/monitoring system.  To initialize this process simply run `isb-cgc-pipelines bootstrap`, which should succeed with a success message if the bootstrap process was successful.  
+
+If you run into problems with the messaging bootstrap process, double check that you have set permissions appropriately for your service accounts (mentioned above in a previous section).
 
 ### Starting and Stopping the Scheduler
 
@@ -83,6 +100,10 @@ To start the scheduler:
 To stop the scheduler:
 
 `isb-cgc-pipelines scheduler stop`
+
+### Creating buckets for outputs and logs
+
+Before you can run any jobs, you will need to make sure that you have read and write access to at least one Google Cloud Storage bucket for storing logs and outputs.  You can run the `gsutil mb` command to create a new bucket from the command line, or you can also use the "Create Bucket" button from the Cloud Storage section of the Cloud Console.
 
 ### Submitting a Task
 
