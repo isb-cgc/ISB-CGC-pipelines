@@ -85,7 +85,7 @@ To configure the framework, run the following command and follow the prompts:
 
 `isb-cgc-pipelines config set all`
 
-Most of the values accepted will provide a suitable default value that you can use by simply pressing enter at each prompt.  The only exception to this is the value for the GCP project id, which must be provided by you during the configuration process.
+Most of the given prompts will provide a suitable default value that you can use by simply pressing enter at each prompt.  If you are unsure what to enter for a particular value, the recommended approach is to accept the default value proposed for the given item.  The only exception to this is the value for the GCP project id, which must be provided by you during the configuration process.
 
 There is one last configuration step, which is to "bootstrap" the messaging system that underlies the job scheduling/monitoring system.  To initialize this process simply run `isb-cgc-pipelines bootstrap`, which should succeed with a success message if the bootstrap process was successful.  
 
