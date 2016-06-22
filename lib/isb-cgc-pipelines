@@ -1,450 +1,92 @@
 #!/usr/bin/env python
 import os
-import shutil
 import argparse
-import subprocess
-from ConfigParser import SafeConfigParser
-from pipelines.builder import PipelineBuilder
-from pipelines.schema import PipelineSchema
-from pipelines.utils import PipelinesConfig, PipelineDbUtils
+import httplib2
+from googleapiclient import discovery
+from oauth2client.client import GoogleCredentials
+from pipelines.utils import PipelinesConfig, PipelineServiceUtils, PipelineSchedulerUtils
 
-MODULE_PATH = "/usr/local/ISB-CGC-pipelines/lib"  # TODO: move path to configuration file
+
 PIPELINES_CONFIG_PATH = os.path.join(os.environ["HOME"], ".isb-cgc-pipelines", "config")
 
 
-def startScheduler(args, unknown, config):
-	pipelineRunDirs = [
-		os.path.join(config.pipelines_home, "SUCCEEDED"),
-		os.path.join(config.pipelines_home, "FAILED"),
-		os.path.join(config.pipelines_home, "RUNNING"),
-		os.path.join(config.pipelines_home, "WAITING"),
-		os.path.join(config.pipelines_home, "PREEMPTED"),
-		os.path.join(config.pipelines_home, "MONITOR"),
-		os.path.join(config.pipelines_home, "DEPENDENT"),
-		os.path.join(config.pipelines_home, "ERROR")  # for jobs that failed to be submitted for some reason
-	]
-
-	for p in pipelineRunDirs:
-		try:
-			os.makedirs(p)
-		except OSError as e:
-			pass
-
-	pipelineDbUtils = PipelineDbUtils(config)
-	pipelineDbUtils.createJobTables()
-	pipelineDbUtils.closeConnection()
-
-	c = SafeConfigParser()
-	try:
-		c.readfp(open("/etc/supervisor/supervisord.conf"))
-	except IOError as e:
-		print "ERROR: supervisor config file (/etc/supervisor/supervisord.conf) -- double check your supervisor installation."
-		exit(-1)
-	else:
-		if not c.has_section("program:pipelineRunningJobs"):
-			c.add_section("program:pipelineRunningJobs")
-
-		if not c.has_section("program:pipelineWaitingJobs"):
-			c.add_section("program:pipelineWaitingJobs")
-
-		if not c.has_section("program:pipelinePreemptedJobs"):
-			c.add_section("program:pipelinePreemptedJobs")
-
-		if not c.has_section("program:pipelineDependentJobs"):
-			c.add_section("program:pipelineDependentJobs")
-
-		if not c.has_section("program:pipelineMonitor"):
-			c.add_section("program:pipelineMonitor")
-		
-		c.set("program:pipelineRunningJobs", "process_name", "pipelineRunningJobs")
-		c.set("program:pipelineRunningJobs", "command", "pipelineRunningJobs --config {config}".format(config=PIPELINES_CONFIG_PATH))
-		c.set("program:pipelineRunningJobs", "environment", "PYTHONPATH={modulePath}".format(modulePath=MODULE_PATH))
-		c.set("program:pipelineRunningJobs", "numprocs", "1")
-		c.set("program:pipelineRunningJobs", "buffer_size", config.max_running_jobs)
-		c.set("program:pipelineRunningJobs", "autostart", "true")
-		c.set("program:pipelineRunningJobs", "autorestart", "true")
-		c.set("program:pipelineRunningJobs", "user", os.environ["USER"])
-
-		c.set("program:pipelineWaitingJobs", "process_name", "pipelineWaitingJobs")
-		c.set("program:pipelineWaitingJobs", "command", "pipelineWaitingJobs --config {config}".format(config=PIPELINES_CONFIG_PATH))
-		c.set("program:pipelineWaitingJobs", "environment", "PYTHONPATH={modulePath}".format(modulePath=MODULE_PATH))
-		c.set("program:pipelineWaitingJobs", "numprocs", "1")
-		c.set("program:pipelineWaitingJobs", "buffer_size", config.max_running_jobs)
-		c.set("program:pipelineWaitingJobs", "autostart", "true")
-		c.set("program:pipelineWaitingJobs", "autorestart", "true")
-		c.set("program:pipelineWaitingJobs", "user", os.environ["USER"])
-
-		c.set("program:pipelinePreemptedJobs", "process_name", "pipelinePreemptedJobs")
-		c.set("program:pipelinePreemptedJobs", "command", "pipelinePreemptedJobs --config {config}".format(config=PIPELINES_CONFIG_PATH))
-		c.set("program:pipelinePreemptedJobs", "environment", "PYTHONPATH={modulePath}".format(modulePath=MODULE_PATH))
-		c.set("program:pipelinePreemptedJobs", "numprocs", "1")
-		c.set("program:pipelinePreemptedJobs", "buffer_size", config.max_running_jobs)
-		c.set("program:pipelinePreemptedJobs", "autostart", "true")
-		c.set("program:pipelinePreemptedJobs", "autorestart", "true")
-		c.set("program:pipelinePreemptedJobs", "user", os.environ["USER"])
-
-		c.set("program:pipelineDependentJobs", "process_name", "pipelineDependentJobs")
-		c.set("program:pipelineDependentJobs", "command", "pipelineDependentJobs --config {config}".format(config=PIPELINES_CONFIG_PATH))
-		c.set("program:pipelineDependentJobs", "environment", "PYTHONPATH={modulePath}".format(modulePath=MODULE_PATH))
-		c.set("program:pipelineDependentJobs", "numprocs", "1")
-		c.set("program:pipelineDependentJobs", "buffer_size", config.max_running_jobs)
-		c.set("program:pipelineDependentJobs", "autostart", "true")
-		c.set("program:pipelineDependentJobs", "autorestart", "true")
-		c.set("program:pipelineDependentJobs", "user", os.environ["USER"])
-
-		c.set("program:pipelineMonitor", "process_name", "pipelineMonitor")
-		c.set("program:pipelineMonitor", "command", "pipelineMonitor --config {config}".format(config=PIPELINES_CONFIG_PATH))
-		c.set("program:pipelineMonitor", "environment", "PYTHONPATH={modulePath}".format(modulePath=MODULE_PATH))
-		c.set("program:pipelineMonitor", "numprocs", "1")
-		c.set("program:pipelineMonitor", "buffer_size", config.max_running_jobs)
-		c.set("program:pipelineMonitor", "autostart", "true")
-		c.set("program:pipelineMonitor", "autorestart", "true")
-		c.set("program:pipelineMonitor", "user", os.environ["USER"])
-
-		with open("/etc/supervisor/supervisord.conf", "w") as f:
-			c.write(f)
-
-	try:
-		subprocess.check_call(["sudo", "service", "supervisor", "restart"])
-
-	except subprocess.CalledProcessError as e:
-		print "ERROR: couldn't restart the scheduler (supervisor): {reason}".format(reason=e)
-		exit(-1)
-
-	print "Scheduler started successfully!"
-
-
-def stopScheduler(args, unknown, config):
-	try:
-		subprocess.check_call(["sudo", "service", "supervisor", "stop"])
-
-	except subprocess.CalledProcessError as e:
-		print "ERROR: couldn't stop the scheduler (supervisor): {reason}".format(reason=e)
-		exit(-1)
-
-	print "Scheduler stopped successfully!"
-
-
-def stopPipeline(args, unknown, config):  # TODO: implement
-	pass
-
-
-def restartJobs(args, config):  # TODO: test
-	pipelineDbUtils = PipelineDbUtils(config)
-
-	if args.jobId:
-		currentStatus = pipelineDbUtils.getJobInfo(select=["current_status"], where={"job_id": args.jobId})[0].current_status
-		pipelineDbUtils.updateJob(args.jobId, setValues={"current_status": "WAITING"})
-		
-		shutil.copy(os.path.join(config.pipelines_home, currentStatus, args.jobId), os.path.join(config.pipelines_home, "WAITING", args.jobId)) 
-		shutil.rmtree(os.path.join(config.pipelines_home, currentStatus, args.jobId))
-
-	if args.preempted:
-		preempted = pipelineDbUtils.getJobInfo(select=["job_id"], where={"current_status": "PREEMPTED"})
-		
-		for p in preempted:
-			pipelineDbUtils.updateJob(p, setValues={"current_status": "WAITING"})
-		
-			shutil.copy(os.path.join(config.pipelines_home, "PREEMPTED", p), os.path.join(config.pipelines_home, "WAITING", p)) 
-			shutil.rmtree(os.path.join(config.pipelines_home, "PREEMPTED", p))
-
-	pipelineDbUtils.closeConnection()
-
-
-def cleanPipelines(args, unknown, config):  # TODO: implement
-	pass
-
-
-def getJobLogs(args, config): 
-	pipelineDbUtils = PipelineDbUtils(config)
-
-	jobInfo = pipelineDbUtils.getJobInfo(select=["stdout_log", "stderr_log", "gcs_log_path"], where={"job_id": args.jobId})
-
-	with open(os.devnull, 'w') as fnull:
-		if args.stdout:
-			try:
-				stdoutLogFile = subprocess.check_output(["gsutil", "cat", os.path.join(jobInfo[0].gcs_log_path, jobInfo[0].stdout_log)], stderr=fnull)
-			except subprocess.CalledProcessError as e:
-				print "ERROR: couldn't get the stdout log : {reason}".format(reason=e)
-				exit(-1)
-
-			print "STDOUT:\n"
-			print stdoutLogFile
-			print "---------\n"
-
-		if args.stderr:
-			try:
-				stderrLogFile = subprocess.check_output(["gsutil", "-q", "cat", os.path.join(jobInfo[0].gcs_log_path, jobInfo[0].stderr_log)], stderr=fnull)
-			except subprocess.CalledProcessError as e:
-				print "ERROR: couldn't get the stderr log : {reason}".format(reason=e)
-				exit(-1)
-
-			print "STDERR:\n"
-			print stderrLogFile
-			print "---------\n"
-
-	pipelineDbUtils.closeConnection()
-
-
-def getJobsList(args, unknown, config):
-	header = "JOBID%sPIPELINE%sOPERATION ID%sTAG%sSTATUS%sCREATE TIME%sPREEMPTIONS\n"
-	jobStatusString = "{jobId}%s{pipeline}%s{operationId}%s{tag}%s{status}%s{createTime}%s{preemptions}\n"
-	
-	pipelineDbUtils = PipelineDbUtils(config)
-
-	parser = argparse.ArgumentParser()
-	parser.add_argument("--pipeline")
-	parser.add_argument("--status", choices=["running", "waiting", "succeeded", "failed", "error", "preempted"])
-	parser.add_argument("--createTimeAfter")
-	parser.add_argument("--limit", default=50)
-
-	args = parser.parse_args(args=unknown, namespace=args)
-
-	select = ["job_id", "operation_id", "pipeline_name", "tag", "current_status", "create_time", "preemptions"]
-	where = {}
-
-	if args.pipeline:
-		where["pipeline_name"] = args.pipeline
-
-	if args.status:
-		where["current_status"] = args.status
-
-	if args.createTimeAfter:
-		where["create_time"] = {
-			"value": args.createTimeAfter,
-			"operator": ">="
-		}
-
-	jobs = pipelineDbUtils.getJobInfo(select=select, where=where)
-
-	pipelineDbUtils.closeConnection()
-
-	def fieldPadding(maxLen, actualLen):
-		return ''.join([' ' for x in range(maxLen - actualLen + 4)])
-
-	if len(jobs) > 0:
-		jobIdLengths = [len(str(x.job_id)) if x.job_id is not None else len(str("None")) for x in jobs]
-		jobIdLengths.append(len("JOBID"))
-		maxJobIdLen = max(jobIdLengths)
-
-		pipelineLengths = [len(x.pipeline_name) if x.pipeline_name is not None else len(str("None")) for x in jobs]
-		pipelineLengths.append(len("PIPELINE"))
-		maxPipelineLen = max(pipelineLengths)
-
-		operationIdLengths = [len(x.operation_id.split('/')[1]) if x.operation_id is not None else len(str("None")) for x in jobs]
-		operationIdLengths.append(len("OPERATION ID"))
-		maxOperationIdLen = max(operationIdLengths)
-
-		statusLengths = [len(x.current_status) if x.current_status is not None else len(str("None")) for x in jobs]
-		statusLengths.append(len("STATUS"))
-		maxStatusLen = max(statusLengths)
-
-		tagLengths = [len(x.tag) if x.tag is not None else len(str("None")) for x in jobs]
-		tagLengths.append(len("TAG"))
-		maxTagLen = max(tagLengths)
-
-		createTimeLengths = [len(x.create_time) if x.create_time is not None else len(str("None")) for x in jobs]
-		createTimeLengths.append(len("CREATE TIME"))
-		maxCreateTimeLen = max(createTimeLengths)
-
-		print header % (fieldPadding(maxJobIdLen, len("JOBID")), fieldPadding(maxPipelineLen, len("PIPELINE")), fieldPadding(maxOperationIdLen, len("OPERATION ID")), fieldPadding(maxTagLen, len("TAG")), fieldPadding(maxStatusLen, len("STATUS")), fieldPadding(maxCreateTimeLen, len("CREATE TIME")))
-		for j in jobs:
-			if j.create_time is not None:
-				ct = j.create_time
-			else:
-				ct = "None"
-			if j.operation_id is not None:
-				op = j.operation_id.split('/')[1]
-			else:
-				op = "None"
-
-			print jobStatusString.format(jobId=j.job_id, pipeline=j.pipeline_name, operationId=op, tag=j.tag, status=j.current_status, createTime=ct, preemptions=j.preemptions) % (fieldPadding(maxJobIdLen, len(str(j.job_id))), fieldPadding(maxPipelineLen, len(j.pipeline_name)), fieldPadding(maxOperationIdLen, len(op)), fieldPadding(maxTagLen, len(j.tag)), fieldPadding(maxStatusLen, len(j.current_status)), fieldPadding(maxCreateTimeLen, len(ct)))
-
-	else:
-		print "No jobs found"
-
-
-def configureTool(args, unknown):
-	config = SafeConfigParser()
-	configPath = os.path.join(os.environ["HOME"], ".isb-cgc-pipelines")
-	configFile = os.path.join(configPath, "config")
-
-	try:
-		os.makedirs(configPath)
-	except OSError:
-		pass
-
-	try:
-		config.readfp(open(os.path.join(configPath, configFile)))
-	except IOError:
-		config.add_section("gcp")
-		config.add_section("pipelines")
-	else:
-		if not config.has_section("gcp"):
-			config.add_section("gcp")
-		if not config.has_section("pipelines"):
-			config.add_section("pipelines")
-
-	parser = argparse.ArgumentParser()
-
-	if args.configOperation == "set":
-		parser.add_argument("parameter", choices=["projectId", "zones", "scopes", "serviceAccount", "pipelinesHome", "autorestartPreempted", "all"])
-	
-		args, value = parser.parse_known_args(args=unknown) 
-
-		if args.parameter == "projectId":
-			config.set("gcp", "project_id", str(value[0]))
-
-		elif args.parameter == "zones":
-			config.set("gcp", "zones", str(value[0]))
-
-		elif args.parameter == "scopes":
-			config.set("gcp", "scopes", str(value[0]))
-
-		elif args.parameter == "serviceAccount":
-			config.set("gcp", "service_account_email", str(value[0]))
-
-		elif args.parameter == "pipelinesHome":
-			config.set("pipelines", "pipelines_home", str(value[0]))
-			
-		elif args.parameter == "autorestartPreempted":
-			config.set("pipelines", "autorestart_preempted", str(value[0]))
-			
-		elif args.parameter == "pollingInterval":
-			config.set("pipelines", "polling_interval", str(value[0]))
-
-		elif args.parameter == "all":
-			projectId = raw_input("Enter your GCP project ID: ")
-			if len(projectId) == 0:
-				print "ERROR: projectId is invalid"
-				exit(-1)
-			else:
-				#TODO: string validation
-				config.set("gcp", "project_id", projectId)
-
-			zones = raw_input("Enter a comma-delimited list of GCE zones (leave blank to use the default list of US zones): ")
-			if len(zones) == 0:
-				zones = "us-central1-a,us-central1-b,us-central1-c,us-central1-f,us-east1-b,us-east1-c,us-east1-d"
-
-			config.set("gcp", "zones", zones)
-
-			scopes = raw_input("Enter a comma-delimited list of GCP scopes (leave blank to use the default list of scopes): ")
-			if len(scopes) == 0:
-				scopes = "https://www.googleapis.com/auth/genomics,https://www.googleapis.com/auth/compute,https://www.googleapis.com/auth/devstorage.full_control"
-
-			config.set("gcp", "scopes", scopes)
-
-			serviceAcct = raw_input("Enter a valid service account email (leave blank to use the default service account): ")
-			if len(serviceAcct) == 0:
-				serviceAcct = "default"
-
-			config.set("gcp", "service_account_email", serviceAcct)
-
-			pipelinesHome = raw_input("Enter a path for the ISB-CGC Pipelines job directory (leave blank to use ~/.isb-cgc-pipelines/pipelines by default): ")
-			if len(pipelinesHome) == 0:
-				pipelinesHome = os.path.join(os.environ["HOME"], ".isb-cgc-pipelines/pipelines")
-
-			try:
-				os.makedirs(pipelinesHome)
-			except OSError:
-				pass				
-	
-			config.set("pipelines", "pipelines_home", pipelinesHome)
-			
-			pollingInterval = raw_input("Enter the number of seconds for the operations status polling interval (leave blank to use default 300s): ")
-			if len(pollingInterval) == 0:
-				pollingInterval = "300"
-				
-			config.set("pipelines", "polling_interval", pollingInterval)
-
-			maxRunningJobs = raw_input("Enter the maximum number of running jobs for any given time (leave blank to use default 2000): ")
-			if len(maxRunningJobs) == 0:
-				maxRunningJobs = "2000"
-
-			config.set("pipelines", "max_running_jobs", maxRunningJobs)
-			
-			autorestartPreempted = raw_input("Would you like to automatically restart preempted jobs? (Only relevant when submitting jobs with the '--preemptible' flag) Y/N : ")
-			if autorestartPreempted == 'Y' or autorestartPreempted == 'y':
-				config.set("pipelines", "autorestart_preempted", "true")
-				
-			elif autorestartPreempted == 'N' or autorestartPreempted == 'n':
-				config.set("pipelines", "autorestart_preempted", "false")
-			
-			else:
-				print "ERROR: unrecogized value '{v}' for autorestart_preempted!\nRerun `isb-cgc-pipelines config set autorestartPreempted` to repair the configuration.".format(v=autorestartPreempted)
-				exit(-1) 
-
-		else:
-			print "ERROR: unrecognized option {o}".format(o=args.parameter)
-			exit(-1)
-
-	with open(configFile, 'w') as f:
-		config.write(f)
-		
-
 def main(args, unknown):
-	if args.subcommand == "submit":
+	if args.subcommand == "bootstrap":
 		config = PipelinesConfig(PIPELINES_CONFIG_PATH)
 
-		try:
-			os.makedirs(config.pipelines_home)
-		except OSError as e:
-			pass
+		# API service objects
+		credentials = GoogleCredentials.get_application_default()
+		http = credentials.authorize(httplib2.Http())
+		if credentials.access_token_expired:
+			credentials.refresh(http)
 
-		if args.scriptUrl:
-			pipelineSpec = PipelineSchema(args.pipelineName, config, args.logsPath, args.imageName, scriptUrl=args.scriptUrl, cores=args.cores,
-			                              mem=args.mem, diskSize=args.diskSize, diskType=args.diskType, env=args.env,
-			                              inputs=args.inputs, outputs=args.outputs, tag=args.tag,
-			                              preemptible=args.preemptible)
-		elif args.cmd:
-			pipelineSpec = PipelineSchema(args.pipelineName, config, args.logsPath, args.imageName, cmd=args.cmd, cores=args.cores,
-			                              mem=args.mem, diskSize=args.diskSize, diskType=args.diskType, env=args.env,
-			                              inputs=args.inputs, outputs=args.outputs, tag=args.tag,
-			                              preemptible=args.preemptible)
+		pubsub = discovery.build('pubsub', 'v1', http=http)
+		logging = discovery.build('logging', 'v2beta1', http=http)
 
-		pipelineBuilder = PipelineBuilder(config)
-		pipelineBuilder.addStep(pipelineSpec)
-		pipelineBuilder.run()
+		PipelineServiceUtils.bootstrapMessageHandlers(pubsub, logging, config, mode="local")
+
+	elif args.subcommand == "scheduler":
+		config = PipelinesConfig(PIPELINES_CONFIG_PATH)
+		user = os.environ["USER"]
+
+		if args.schedulerOperation == "stop":
+			PipelineSchedulerUtils.stopScheduler()
+		elif args.schedulerOperation == "start":
+			PipelineSchedulerUtils.startScheduler(config, user)
+		else:
+			print "ERROR: unrecognized option {o}".format(o=args.startOrStop)
+			exit(-1)
+
+	if args.subcommand == "submit":
+		config = PipelinesConfig(PIPELINES_CONFIG_PATH)
+		PipelineSchedulerUtils.submitPipeline(args, config)
+
+	if args.subcommand == "edit":
+		config = PipelinesConfig(PIPELINES_CONFIG_PATH)
+		PipelineSchedulerUtils.editPipeline(args, config)
 
 	elif args.subcommand == "stop":
 		config = PipelinesConfig(PIPELINES_CONFIG_PATH)
-		stopPipeline(args, unknown, config) 
+		PipelineSchedulerUtils.stopPipeline(args, config)
 
 	elif args.subcommand == "restart":
 		config = PipelinesConfig(PIPELINES_CONFIG_PATH)
-		restartJobs(args, config)
-
-	elif args.subcommand == "clean":
-		config = PipelinesConfig(PIPELINES_CONFIG_PATH)
-		cleanPipelines(args, unknown, config) 
+		PipelineSchedulerUtils.restartJobs(args, config)
 
 	elif args.subcommand == "logs":
 		config = PipelinesConfig(PIPELINES_CONFIG_PATH)
-		getJobLogs(args, config)
+		PipelineSchedulerUtils.getJobLogs(args, config)
 
 	elif args.subcommand == "list":
 		config = PipelinesConfig(PIPELINES_CONFIG_PATH)
 
 		if args.entity == "jobs":
-			getJobsList(args, unknown, config)
-
-	elif args.subcommand == "scheduler":
-		config = PipelinesConfig(PIPELINES_CONFIG_PATH)
-
-		if args.schedulerOperation == "stop":
-			stopScheduler(args, unknown, config)
-		elif args.schedulerOperation == "start":
-			startScheduler(args, unknown, config)
-		else:
-			print "ERROR: unrecognized option {o}".format(o=args.startOrStop)
-			exit(-1)
+			PipelineSchedulerUtils.getJobsList(args, unknown, config)
 
 	elif args.subcommand == "config":
-		configureTool(args, unknown)
+		parser = argparse.ArgumentParser()
+
+		if args.configOperation == "set":
+			parser.add_argument("parameter", choices=["gcp/project_id", "gcp/zones", "gcp/scopes", "gcp/serviceAccount", "pipelines/autorestartPreempted", "all"])
+			args, value = parser.parse_known_args(args=unknown)
+
+			if args.parameter == "all":
+				config = PipelinesConfig(PIPELINES_CONFIG_PATH, first_time=True)
+
+			else:
+				config = PipelinesConfig(PIPELINES_CONFIG_PATH)
+				section, option = args.parameter.split('/')
+				try:
+					config.update(section, option, value)
+				except ValueError as e:
+					print "ERROR: couldn't update the configuration : {reason}".format(reason=e)
+					exit(-1)
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser(description="")
 	subparsers = parser.add_subparsers(dest="subcommand")
+
+	deploy = subparsers.add_parser("bootstrap")
 
 	scheduler = subparsers.add_parser("scheduler")
 	scheduler.add_argument("schedulerOperation", choices=["start", "stop"])
@@ -466,23 +108,24 @@ if __name__ == "__main__":
 	submit.add_argument("--tag", required=False, default=None)
 	submit.add_argument("--preemptible", action="store_true", default=False)
 
+	edit = subparsers.add_parser("edit")
+	edit.add_argument("--jobId")
+
 	stop = subparsers.add_parser("stop")
 	stopGrp = stop.add_mutually_exclusive_group()
-	stopGrp.add_argument("--jobIds")
+	stopGrp.add_argument("--jobId")
 	stopGrp.add_argument("--pipeline")
+	stopGrp.add_argument("--tag")
 
 	restart = subparsers.add_parser("restart")
 	restartGrp = restart.add_mutually_exclusive_group()
-	restartGrp.add_argument("--jobIds")
+	restartGrp.add_argument("--jobId")
 	restartGrp.add_argument("--preempted", action="store_true")
-
-	clean = subparsers.add_parser("clean")
-	clean.add_argument("pipeline")
 
 	logs = subparsers.add_parser("logs")
 	logs.add_argument("jobId")
 	logs.add_argument("--stderr", action="store_true")
-	logs.add_argument("--stdout", action="store_true", default=True)
+	logs.add_argument("--stdout", action="store_true")
 
 	lst = subparsers.add_parser("list")
 	lst.add_argument("entity", choices=["jobs", "schemas"])

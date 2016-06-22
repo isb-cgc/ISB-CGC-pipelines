@@ -1,0 +1,218 @@
+#!/usr/bin/env python
+import re
+import json
+import base64
+import httplib2
+import argparse
+import threading
+from time import sleep
+from apiclient import discovery
+from dateutil.parser import parse
+from googleapiclient.errors import HttpError
+from oauth2client import client as oauth2client
+
+from pipelines.utils import PipelinesConfig, PipelineDbUtils, PipelineQueueUtils, PipelineSchedulerUtils
+
+PUBSUB_SCOPES = ['https://www.googleapis.com/auth/pubsub']
+
+
+class PubsubMessageHandlers(object):
+	@staticmethod
+	def pipelineVmLogs(log, compute, genomics, config):
+		def getProcessingTime(status):
+			# get the total processing time of the job
+			processingStart = None
+			processingTime = None
+			for i, e in enumerate(status["metadata"]["events"]):
+				if e["description"] == "running-docker":
+					processingStart = status["metadata"]["events"][i]["startTime"]
+					break
+
+			if processingStart is not None:
+				processingTimeDelta = parse(status["metadata"]["endTime"]) - parse(processingStart)
+				processingTime = processingTimeDelta.total_seconds()
+
+			return processingTime
+
+		pipelineDbUtils = PipelineDbUtils(config)
+		pipelineQueueUtils = PipelineQueueUtils()
+
+		instance = log["jsonPayload"]["resource"]["name"]
+
+		if log["jsonPayload"]["event_subtype"] == "compute.instances.preempted":
+
+			try:
+				operationId =  pipelineDbUtils.getJobInfo(select=["operation_id"], where={"instance_name": instance})[0].operation_id
+
+			except IndexError:
+				PipelineSchedulerUtils.writeStderr("Instance {i} preempted, but no record exists in jobs database".format(i=instance))
+
+			else:
+				PipelineSchedulerUtils.writeStdout("Instance {i} (operation {o}) preempted!".format(i=instance, o=operationId))
+				jobInfo = pipelineDbUtils.getJobInfo(select=["job_id", "pipeline_name", "tag", "create_time", "current_status"], where={"operation_id": operationId})
+
+				children = [x[0] for x in pipelineDbUtils.getChildJobs(jobInfo[0].job_id)]
+
+				if jobInfo[0].current_status != "CANCELLED":
+					pipelineDbUtils.updateJob(jobInfo[0].job_id, keyName="job_id", setValues={"current_status": "PREEMPTED", "preemptions": 1})
+
+					if config.autorestart_preempted:
+						pipelineQueueUtils = PipelineQueueUtils()
+						jobInfo = pipelineDbUtils.getJobInfo(select=["request", "job_id"], where={"operation_id": operationId})
+						msg = {
+							"job_id": jobInfo[0].job_id,
+							"request": json.loads(jobInfo[0].request)
+						}
+						pipelineQueueUtils.publish(json.dumps(msg))
+					else:
+						if len(children) > 0:
+							PipelineSchedulerUtils.writeStderr(
+								"Couldn't start downstream jobs for job {j} ({pipeline}-{tag}) : status is PREEMPTED (autorestart is FALSE)".format(
+									j=jobInfo[0].job_id, pipeline=jobInfo[0].pipeline_name, tag=jobInfo[0].tag))
+
+				else:
+					if len(children) > 0:
+						PipelineSchedulerUtils.writeStderr(
+							"Couldn't start downstream jobs for job {j} ({pipeline}-{tag}) : status is CANCELLED".format(
+								j=jobInfo[0].job_id, pipeline=jobInfo[0].pipeline_name, tag=jobInfo[0].tag))
+
+		elif log["jsonPayload"]["event_subtype"] == "compute.instances.delete":
+			# update the status of the job in the jobs db
+			try:
+				jobInfo = pipelineDbUtils.getJobInfo(select=["operation_id", "current_status"], where={"instance_name": instance})[0]
+
+			except IndexError:
+				PipelineSchedulerUtils.writeStderr("Instance {i} deleted, but no record exists in jobs database".format(i=instance))
+
+			else:
+				operationId = jobInfo.operation_id
+				currentStatus = jobInfo.current_status
+
+				if not currentStatus == "PREEMPTED":
+					status = genomics.operations().get(name="operations/{op}".format(op=operationId)).execute()
+					while not "endTime" in status["metadata"].keys():
+						sleep(5)
+						status = genomics.operations().get(name="operations/{op}".format(op=operationId)).execute()
+
+					processingTime = getProcessingTime(status)
+
+					PipelineSchedulerUtils.writeStdout("Instance {i} (operation {o}) completed!".format(i=instance, o=operationId))
+
+					jobInfo = pipelineDbUtils.getJobInfo(select=["job_id", "pipeline_name", "tag", "create_time", "current_status"], where={"operation_id": operationId})
+					children = [x[0] for x in pipelineDbUtils.getChildJobs(jobInfo[0].job_id)]
+
+					if status["done"] and "error" not in status.keys():
+						PipelineSchedulerUtils.writeStdout("PIPELINE SUCCEEDED (pipeline: {pipeline}, tag: {tag}, operation: {operation})".format(pipeline=jobInfo[0].pipeline_name, tag=jobInfo[0].tag, operation=status["name"]))
+						pipelineDbUtils.updateJob(jobInfo[0].job_id, keyName="job_id", setValues={"current_status": "SUCCEEDED", "end_time": status["metadata"]["endTime"], "processing_time": processingTime})
+
+						if len(children) > 0:
+							for c in children:
+								parents = [x[0] for x in pipelineDbUtils.getParentJobs(c)]
+								totalParents = len(parents)
+								succeededParents = 1
+								parents.remove(int(jobInfo[0].job_id))
+
+								for p in parents:
+									status = pipelineDbUtils.getJobInfo(select=["current_status"], where={"job_id": p})[0].current_status
+
+									if status == "SUCCEEDED":
+										succeededParents += 1
+
+									else:
+										break
+
+								if totalParents == succeededParents:
+									childRequest = json.loads(pipelineDbUtils.getJobInfo(select=["request"], where={"job_id": c})[0].request)
+
+									msg = {
+										"job_id": c,
+										"request": childRequest
+									}
+									pipelineQueueUtils.publish(json.dumps(msg))
+
+						else:
+							PipelineSchedulerUtils.writeStdout(
+								"Job {jobid} has no child jobs to check!".format(jobid=jobInfo[0].job_id))
+
+					elif "error" in status.keys():
+						if not re.match('^14: VM .* stopped unexpectedly\.$', status["error"]["message"]) and jobInfo[0].current_status != "CANCELLED":
+							PipelineSchedulerUtils.writeStdout("PIPELINE FAILED ({job}): {reason}".format(job="{pipeline}-{tag}".format(pipeline=jobInfo[0].pipeline_name, tag=jobInfo[0].tag), reason=status["error"]["message"]))
+							pipelineDbUtils.updateJob(jobInfo[0].job_id, keyName="job_id", setValues={"current_status": "FAILED", "end_time": status["metadata"]["endTime"], "processing_time": processingTime})
+							if len(children) > 0:
+								PipelineSchedulerUtils.writeStderr("Couldn't start downstream jobs for job {j} ({pipeline}-{tag}) : status is FAILED".format(
+										j=jobInfo[0].job_id, pipeline=jobInfo[0].pipeline_name, tag=jobInfo[0].tag))
+
+		elif log["jsonPayload"]["event_subtype"] == "compute.instances.insert":
+			zone = log["resource"]["labels"]["zone"]
+			try:
+				operationId = compute.instances().get(project=config.project_id, zone=zone, instance=instance).execute()["description"].partition("Operation: ")[-1]
+
+			except HttpError as e:
+				PipelineSchedulerUtils.writeStderr("Couldn't get the operation id for instance {i} : {reason}".format(i=instance, reason=e))
+
+			else:
+				PipelineSchedulerUtils.writeStdout("Instance {i} (operation {o}) started!".format(i=instance, o=operationId))
+				pipelineDbUtils.updateJob(operationId, keyName="operation_id", setValues={"instance_name": instance})
+							
+
+def main(args, config):
+	credentials = oauth2client.GoogleCredentials.get_application_default()
+
+	if credentials.create_scoped_required():
+		credentials = credentials.create_scoped(PUBSUB_SCOPES)
+
+	http = httplib2.Http()
+	credentials.authorize(http)
+
+	pubsub = discovery.build('pubsub', 'v1', http=http)
+	compute = discovery.build('compute', 'v1', http=http)
+	genomics = discovery.build('genomics', 'v1alpha2', http=http)
+
+	subscription = 'projects/{project}/subscriptions/{subscription}'.format(project=config.project_id, subscription=args.subscription)
+
+	# Create a POST body for the Pub/Sub request
+	body = {
+		'returnImmediately': False,
+		'maxMessages': 1
+	}
+
+	while True:
+		if credentials.access_token_expired:
+			credentials.refresh(http)
+
+		try:
+			resp = pubsub.projects().subscriptions().pull(subscription=subscription, body=body).execute()
+		except HttpError as e:
+			PipelineSchedulerUtils.writeStderr("Couldn't pull from subscription {s} : {reason}".format(s=args.subscription, reason=e))
+
+		receivedMessages = resp.get('receivedMessages')
+		if receivedMessages is not None:
+			ackIds = []
+			for receivedMessage in receivedMessages:
+				pubsubMessage = receivedMessage.get('message')
+				if pubsubMessage:
+					log = json.loads(base64.b64decode(str(pubsubMessage.get('data'))))
+					PipelineSchedulerUtils.writeStdout("Received message: {msg}".format(msg=base64.b64decode(str(pubsubMessage.get('data')))))
+					PubsubMessageHandlers.pipelineVmLogs(log, compute, genomics, config)
+					ackIds.append(receivedMessage.get('ackId'))
+
+			ackBody = {'ackIds': ackIds}
+
+			# Acknowledge the message.
+			pubsub.projects().subscriptions().acknowledge(subscription=subscription, body=ackBody).execute()
+
+
+if __name__ == "__main__":
+	parser = argparse.ArgumentParser()
+	parser.add_argument("--config")
+	parser.add_argument("--subscription")
+
+	args = parser.parse_args()
+	config = PipelinesConfig(path=args.config)
+
+	t = threading.Thread(target=config.watch)
+	t.daemon = True
+	t.start()
+
+	main(args, config)
+	t.join()
