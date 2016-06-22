@@ -10,4 +10,15 @@ groupadd supervisor
 chgrp -R supervisor /etc/supervisor /var/log/supervisor
 chmod -R 0775 /etc/supervisor /var/log/supervisor
 
+cd /usr/local
+git clone https://github.com/isb-cgc/ISB-CGC-pipelines.git
+
+ln -s /usr/local/ISB-CGC-pipelines/lib/isb-cgc-pipelines /usr/bin/isb-cgc-pipelines
+ln -s /usr/local/ISB-CGC-pipelines/lib/scheduler/pipelineJobScheduler /usr/bin/pipelineJobScheduler
+ln -s /usr/local/ISB-CGC-pipelines/lib/scheduler/receivePipelineVmLogs /usr/bin/receivePipelineVmLogs
+ln -s /usr/local/ISB-CGC-pipelines/lib/examples/utility_scripts/calculateDiskSize /usr/bin/calculateDiskSize
+ln -s /usr/local/ISB-CGC-pipelines/lib/examples/utility_scripts/constructCghubFilePaths /usr/bin/constructCghubFilePaths
+ln -s /usr/local/ISB-CGC-pipelines/lib/examples/utility_scripts/getChecksum /usr/bin/getChecksum
+ln -s /usr/local/ISB-CGC-pipelines/lib/examples/utility_scripts/getFilenames /usr/bin/getFilenames
+
 
