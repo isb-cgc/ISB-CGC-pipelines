@@ -5,6 +5,7 @@ import base64
 import httplib2
 import argparse
 import threading
+from time import sleep
 from apiclient import discovery
 from dateutil.parser import parse
 from googleapiclient.errors import HttpError
@@ -82,6 +83,10 @@ class PubsubMessageHandlers(object):
 
 				if not currentStatus == "PREEMPTED":
 					status = genomics.operations().get(name="operations/{op}".format(op=operationId)).execute()
+					while not "endTime" in status["metadata"].keys():
+						sleep(5)
+						status = genomics.operations().get(name="operations/{op}".format(op=operationId)).execute()
+
 					processingTime = getProcessingTime(status)
 
 					PipelineSchedulerUtils.writeStdout("Instance {i} (operation {o}) completed!".format(i=instance, o=operationId))
