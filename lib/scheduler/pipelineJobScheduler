@@ -77,18 +77,21 @@ def main(config):
 					elif d["type"] == "PERSISTENT_HDD":
 						hddTest -= d["sizeGb"]
 
-			try:
-				run = genomics.pipelines().run(body=body["request"]).execute()
-			except HttpError as e:
-				jobInfo = pipelineDbUtils.getJobInfo(select=["pipeline_name", "tag"], where={"job_id": body["job_id"]})
-				PipelineSchedulerUtils.writeStderr(
-					"ERROR: couldn't start job {pipeline}-{tag} : {reason}".format(pipeline=jobInfo[0].pipeline_name, tag=jobInfo[0].tag, reason=e))
-				pipelineDbUtils.updateJob(body["job_id"], keyName="job_id", setValues={"current_status": "ERROR"})
+			jobInfo = pipelineDbUtils.getJobInfo(select=["current_status"], where={"job_id": body["job_id"]})[0]
 
-			else:
-				operationId = run["name"].split("/")[-1]
-				PipelineSchedulerUtils.writeStdout("Operation submitted: {op}".format(op=operationId))
-				pipelineDbUtils.updateJob(body["job_id"], keyName="job_id", setValues={"current_status": "RUNNING", "operation_id": operationId, "stdout_log": "{op}-stdout.log".format(op=operationId), "stderr_log": "{op}-stderr.log".format(op=operationId), "create_time": run["metadata"]["createTime"], "end_time": None, "processing_time": None})
+			if jobInfo.current_status != "CANCELLED":
+				try:
+					run = genomics.pipelines().run(body=body["request"]).execute()
+				except HttpError as e:
+					jobInfo = pipelineDbUtils.getJobInfo(select=["pipeline_name", "tag"], where={"job_id": body["job_id"]})
+					PipelineSchedulerUtils.writeStderr(
+						"ERROR: couldn't start job {pipeline}-{tag} : {reason}".format(pipeline=jobInfo[0].pipeline_name, tag=jobInfo[0].tag, reason=e))
+					pipelineDbUtils.updateJob(body["job_id"], keyName="job_id", setValues={"current_status": "ERROR"})
+
+				else:
+					operationId = run["name"].split("/")[-1]
+					PipelineSchedulerUtils.writeStdout("Operation submitted: {op}".format(op=operationId))
+					pipelineDbUtils.updateJob(body["job_id"], keyName="job_id", setValues={"current_status": "RUNNING", "operation_id": operationId, "stdout_log": "{op}-stdout.log".format(op=operationId), "stderr_log": "{op}-stderr.log".format(op=operationId), "create_time": run["metadata"]["createTime"], "end_time": None, "processing_time": None})
 
 			pipelineQueueUtils.acknowledge(method)
 
