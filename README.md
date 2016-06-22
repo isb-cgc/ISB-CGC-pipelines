@@ -9,6 +9,14 @@ In order to use the ISB-CGC-pipelines tools, the following requirements must be 
 - You must have the following APIs enabled in your Google Cloud Project: Google Compute Engine, Google Genomics, Google Cloud Pub/Sub, Google Cloud Logging
 - (Optional) Install the Google Cloud SDK, including "alpha" subcommands for the `gcloud` command.  This step isn't required if you plan to use a Google Compute Engine VM for running the tool.
 
+## Helpful Information
+
+Understanding of the following technologies and topics will be essential for successfully developing pipelines that can be run using the ISB-CGC-pipelines framework, and it is recommended that you read the linked documentation if necessary before proceeding any further with these instructions:
+
+- Docker ([Official Tutorials](https://docs.docker.com/engine/tutorials/))
+- Google Compute Engine ([Official Documentation](https://cloud.google.com/compute/docs/))
+- Google Container Registry ([Official Documentation](https://cloud.google.com/container-registry/docs/))
+
 ## Service Account Configuration
 
 Note: The steps in this section require "Owner" status to complete.
