@@ -38,10 +38,10 @@ To grant a role to an existing service account, simply click on the dropdown to 
 
 ### Method 1: Cloud Installation
 
-The easiest way to set up the ISB-CGC-pipelines framework is to use the tool's Compute Engine startup script to bootstrap a the workstation.  To do this, you can run the following command (or a variation thereof) to create the workstation:
+The easiest way to set up the ISB-CGC-pipelines framework is to use the tool's Compute Engine startup script to bootstrap a the workstation.  To do this, you can run the following command (or a variation thereof) to create the workstation with the appropriate scopes:
 
 ```
-gcloud compute instances create my-pipeline-workstation --metadata startup-script-url=gs://isb-cgc-open/vm-startup-scripts/isb-cgc-pipelines-startup.sh
+gcloud compute instances create my-pipeline-workstation --metadata startup-script-url=gs://isb-cgc-open/vm-startup-scripts/isb-cgc-pipelines-startup.sh --scopes cloud-platform
 ```
 
 Once the instance is ready, you can ssh to it using the following command:
