@@ -135,7 +135,7 @@ class PubsubMessageHandlers(object):
 								"Job {jobid} has no child jobs to check!".format(jobid=jobInfo[0].job_id))
 
 					elif "error" in status.keys():
-						if not re.match('^14: VM .* stopped unexpectedly\.$', status["error"]["message"]) and jobInfo[0].current_status != "CANCELLED":
+						if jobInfo[0].current_status != "CANCELLED":
 							PipelineSchedulerUtils.writeStdout("PIPELINE FAILED ({job}): {reason}".format(job="{pipeline}-{tag}".format(pipeline=jobInfo[0].pipeline_name, tag=jobInfo[0].tag), reason=status["error"]["message"]))
 							pipelineDbUtils.updateJob(jobInfo[0].job_id, keyName="job_id", setValues={"current_status": "FAILED", "end_time": status["metadata"]["endTime"], "processing_time": processingTime})
 							if len(children) > 0:
