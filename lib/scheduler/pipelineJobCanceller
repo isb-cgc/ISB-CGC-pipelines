@@ -1,0 +1,77 @@
+#!/usr/bin/env python
+
+# !/usr/bin/env python
+import os
+import json
+import httplib2
+import argparse
+import threading
+from time import sleep
+from apiclient.discovery import build
+from googleapiclient.errors import HttpError
+from oauth2client.client import GoogleCredentials
+from pipelines.utils import PipelinesConfig, PipelineSchedulerUtils, PipelineDbUtils, PipelineQueueUtils
+
+
+# NOTE: this process should be started up as part of the scheduling system (managed by Supervisor)
+
+
+def main(config):
+	# authenticate
+	credentials = GoogleCredentials.get_application_default()
+	http = httplib2.Http()
+	credentials.authorize(http)
+
+	genomics = build('genomics', 'v1alpha2', http=http)
+
+	pipelineDbUtils = PipelineDbUtils(config)
+	pipelineQueueUtils = PipelineQueueUtils('CANCEL_Q')
+
+	while True:
+		# consume a request
+		body, method = pipelineQueueUtils.get()
+
+		if method:
+			body = json.loads(body)
+
+			jobInfo = pipelineDbUtils.getJobInfo(select=["current_status", "operation_id"], where={"job_id": body["job_id"]})[0]
+
+			if jobInfo.current_status != "CANCELLED":
+				try:
+					genomics.operations().cancel(name=jobInfo.operation_id).execute()
+				except HttpError as e:
+					jobInfo = pipelineDbUtils.getJobInfo(select=["pipeline_name", "tag"], where={"job_id": body["job_id"]})
+					PipelineSchedulerUtils.writeStderr(
+						"ERROR: couldn't cancel job {pipeline}-{tag} : {reason}".format(
+							pipeline=jobInfo[0].pipeline_name, tag=jobInfo[0].tag, reason=e))
+				else:
+					pipelineDbUtils.updateJob(body["job_id"], keyName="job_id", setValues={"current_status": "CANCELLED"})
+
+			pipelineQueueUtils.acknowledge(method)
+
+		else:
+			pass
+
+
+if __name__ == "__main__":
+	parser = argparse.ArgumentParser()
+	parser.add_argument("--config")
+
+	args = parser.parse_args()
+	config = PipelinesConfig(args.config)
+
+	t = threading.Thread(target=config.watch)
+	t.daemon = True
+	t.start()
+
+	main(config)
+	t.join()
+
+
+
+
+
+
+
+
+

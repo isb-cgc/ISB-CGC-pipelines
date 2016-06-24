@@ -23,11 +23,11 @@ def main(config):
 	genomics = build('genomics', 'v1alpha2', http=http)
 
 	pipelineDbUtils = PipelineDbUtils(config)
-	pipelineQueueUtils = PipelineQueueUtils()
+	pipelineQueueUtils = PipelineQueueUtils('WAIT_Q')
 
 	while True:
 		# consume a request
-		body, method = pipelineQueueUtils.get()
+		body, method = pipelineQueueUtils.get('WAIT_Q')
 
 		if method:
 			body = json.loads(body)

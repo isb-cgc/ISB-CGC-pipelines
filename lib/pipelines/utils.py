@@ -224,7 +224,7 @@ class PipelineBuilder(object):
 		self._config = config
 		self._dependencyMap = {}
 		self._pipelineDbUtils = PipelineDbUtils(self._config)
-		self._pipelineQueueUtils = PipelineQueueUtils()
+		self._pipelineQueueUtils = PipelineQueueUtils('WAIT_Q')
 
 	def addStep(self, root):  # root must be an instance of PipelineSchema
 		if self.hasStep(root.name):
@@ -503,6 +503,7 @@ class PipelineSchedulerUtils(object):
 		channel = rabbitmqConn.channel()
 
 		channel.queue_declare(queue='WAIT_Q', durable=True)
+		channel.queue_declare(queue='CANCEL_Q', durable=True)
 		rabbitmqConn.close()
 
 		pipelineDbUtils = PipelineDbUtils(config)
@@ -518,6 +519,9 @@ class PipelineSchedulerUtils(object):
 		else:
 			if not c.has_section("program:pipelineJobScheduler"):
 				c.add_section("program:pipelineJobScheduler")
+
+			if not c.has_section("program:pipelineJobCanceller"):
+				c.add_section("program:pipelineJobCanceller")
 
 			if not c.has_section("program:pipelinePreemptedLogsHandler"):
 				c.add_section("program:pipelinePreemptedLogsHandler")
@@ -537,6 +541,16 @@ class PipelineSchedulerUtils(object):
 			c.set("program:pipelineJobScheduler", "autostart", "true")
 			c.set("program:pipelineJobScheduler", "autorestart", "true")
 			c.set("program:pipelineJobScheduler", "user", user)
+
+			c.set("program:pipelineJobCanceller", "process_name", "pipelineJobCanceller")
+			c.set("program:pipelineJobCanceller", "command",
+			      "pipelineJobCanceller --config {config}".format(config=config.path))
+			c.set("program:pipelineJobCanceller", "environment",
+			      "PYTHONPATH={modulePath}".format(modulePath=MODULE_PATH))
+			c.set("program:pipelineJobCanceller", "numprocs", "1")
+			c.set("program:pipelineJobCanceller", "autostart", "true")
+			c.set("program:pipelineJobCanceller", "autorestart", "true")
+			c.set("program:pipelineJobCanceller", "user", user)
 
 			c.set("program:pipelineInsertLogsHandler", "process_name", "%(program_name)s_%(process_num)s")
 			c.set("program:pipelineInsertLogsHandler", "command",
@@ -613,9 +627,8 @@ class PipelineSchedulerUtils(object):
 		pipelineBuilder.run()
 
 	@staticmethod
-	def stopPipeline(args, config):  # TODO: implement
-		def cancelOperation(operationId):
-			pass
+	def stopPipeline(args, config):
+		pipelineQueueUtils = PipelineQueueUtils('CANCEL_Q')
 
 		pipelineDbUtils = PipelineDbUtils(config)
 
@@ -632,11 +645,12 @@ class PipelineSchedulerUtils(object):
 			                                     where={"tag": args.tag})
 
 		for j in jobInfo:
-			if j.current_status not in ["SUCCEEDED", "FAILED", "PREEMPTED"]:
-				pipelineDbUtils.updateJob(j.job_id, keyName="job_id", setValues={"current_status": "CANCELLED"})
-
 			if j.current_status == "RUNNING":
-				cancelOperation(j.operation_id)
+				msg = {
+					"job_id": j.job_id,
+					"operation_id": j.operation_id
+				}
+				pipelineQueueUtils.publish(json.dumps(msg))
 
 
 	@staticmethod
@@ -824,20 +838,21 @@ class PipelineSchedulerUtils(object):
 
 
 class PipelineQueueUtils(object):
-	def __init__(self):
+	def __init__(self, queueName):
+		self._qname = queueName
 		self._connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost'))
 		self._channel = self._connection.channel()
-		self._channel.queue_declare(queue='WAIT_Q', durable=True)
+		self._channel.queue_declare(queue=queueName, durable=True)
 
 	def __del__(self):
 		self._connection.close()
 
 	def publish(self, msg):
-		self._channel.basic_publish(exchange='', routing_key="WAIT_Q", body=msg)
+		self._channel.basic_publish(exchange='', routing_key=self._qname, body=msg)
 
 	def get(self):
 		self._channel.basic_qos(prefetch_count=1)
-		method, header, body = self._channel.basic_get('WAIT_Q')
+		method, header, body = self._channel.basic_get(self._qname)
 
 		return body, method
 
