@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-import re
 import json
 import base64
 import httplib2
@@ -183,9 +182,6 @@ def main(args, config):
 		try:
 			resp = pubsub.projects().subscriptions().pull(subscription=subscription, body=body).execute()
 		except HttpError as e:
-			if e.resp.status == 504:
-				continue
-			else:
 				PipelineSchedulerUtils.writeStderr("Couldn't pull from subscription {s} : {reason}".format(s=args.subscription, reason=e))
 
 		receivedMessages = resp.get('receivedMessages')
