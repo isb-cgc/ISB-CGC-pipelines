@@ -27,7 +27,7 @@ def main(config):
 
 	while True:
 		# consume a request
-		body, method = pipelineQueueUtils.get('WAIT_Q')
+		body, method = pipelineQueueUtils.get()
 
 		if method:
 			body = json.loads(body)
