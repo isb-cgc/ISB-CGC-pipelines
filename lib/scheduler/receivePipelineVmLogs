@@ -183,22 +183,22 @@ def main(args, config):
 			resp = pubsub.projects().subscriptions().pull(subscription=subscription, body=body).execute()
 		except HttpError as e:
 				PipelineSchedulerUtils.writeStderr("Couldn't pull from subscription {s} : {reason}".format(s=args.subscription, reason=e))
+		else:
+			receivedMessages = resp.get('receivedMessages')
+			if receivedMessages is not None:
+				ackIds = []
+				for receivedMessage in receivedMessages:
+					pubsubMessage = receivedMessage.get('message')
+					if pubsubMessage:
+						log = json.loads(base64.b64decode(str(pubsubMessage.get('data'))))
+						PipelineSchedulerUtils.writeStdout("Received message: {msg}".format(msg=base64.b64decode(str(pubsubMessage.get('data')))))
+						PubsubMessageHandlers.pipelineVmLogs(log, compute, genomics, config)
+						ackIds.append(receivedMessage.get('ackId'))
 
-		receivedMessages = resp.get('receivedMessages')
-		if receivedMessages is not None:
-			ackIds = []
-			for receivedMessage in receivedMessages:
-				pubsubMessage = receivedMessage.get('message')
-				if pubsubMessage:
-					log = json.loads(base64.b64decode(str(pubsubMessage.get('data'))))
-					PipelineSchedulerUtils.writeStdout("Received message: {msg}".format(msg=base64.b64decode(str(pubsubMessage.get('data')))))
-					PubsubMessageHandlers.pipelineVmLogs(log, compute, genomics, config)
-					ackIds.append(receivedMessage.get('ackId'))
+				ackBody = {'ackIds': ackIds}
 
-			ackBody = {'ackIds': ackIds}
-
-			# Acknowledge the message.
-			pubsub.projects().subscriptions().acknowledge(subscription=subscription, body=ackBody).execute()
+				# Acknowledge the message.
+				pubsub.projects().subscriptions().acknowledge(subscription=subscription, body=ackBody).execute()
 
 
 if __name__ == "__main__":
