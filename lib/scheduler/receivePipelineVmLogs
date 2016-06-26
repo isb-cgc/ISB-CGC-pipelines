@@ -56,7 +56,6 @@ class PubsubMessageHandlers(object):
 					pipelineDbUtils.updateJob(jobInfo[0].job_id, keyName="job_id", setValues={"current_status": "PREEMPTED", "preemptions": 1})
 
 					if config.autorestart_preempted:
-						pipelineQueueUtils = PipelineQueueUtils()
 						jobInfo = pipelineDbUtils.getJobInfo(select=["request", "job_id"], where={"operation_id": operationId})
 						msg = {
 							"job_id": jobInfo[0].job_id,
