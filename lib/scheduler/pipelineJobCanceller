@@ -38,7 +38,7 @@ def main(config):
 
 			if jobInfo.current_status != "CANCELLED":
 				try:
-					genomics.operations().cancel(name=jobInfo.operation_id, body={}).execute()
+					genomics.operations().cancel(name="operations/{o}".format(o=jobInfo.operation_id), body={}).execute()
 				except HttpError as e:
 					jobInfo = pipelineDbUtils.getJobInfo(select=["pipeline_name", "tag"], where={"job_id": body["job_id"]})
 					PipelineSchedulerUtils.writeStderr(
