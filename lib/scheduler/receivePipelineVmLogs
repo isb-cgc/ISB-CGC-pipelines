@@ -182,7 +182,10 @@ def main(args, config):
 		try:
 			resp = pubsub.projects().subscriptions().pull(subscription=subscription, body=body).execute()
 		except HttpError as e:
-				PipelineSchedulerUtils.writeStderr("Couldn't pull from subscription {s} : {reason}".format(s=args.subscription, reason=e))
+				if e.resp.status == 504:
+					continue
+				else:
+					PipelineSchedulerUtils.writeStderr("Couldn't pull from subscription {s} : {reason}".format(s=args.subscription, reason=e))
 		else:
 			receivedMessages = resp.get('receivedMessages')
 			if receivedMessages is not None:
