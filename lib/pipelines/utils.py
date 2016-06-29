@@ -656,7 +656,7 @@ class PipelineSchedulerUtils(object):
 	@staticmethod
 	def restartJobs(args, config):  # TODO: reimplement
 		pipelineDbUtils = PipelineDbUtils(config)
-		pipelineQueueUtils = PipelineQueueUtils()
+		pipelineQueueUtils = PipelineQueueUtils('WAIT_Q')
 
 		if args.jobId:
 			request = json.loads(pipelineDbUtils.getJobInfo(select=["request"], where={"job_id": args.jobId})[0].request)
