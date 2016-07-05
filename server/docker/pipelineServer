@@ -6,7 +6,7 @@ from pipelines.builder import PipelineBuilder
 from pipelines.schema import PipelineSchema
 from pipelines.utils import PipelinesConfig, PipelineDbUtils, PipelineServiceUtils
 
-class ListJobs(webapp2.RequestHandler):
+class Jobs(webapp2.RequestHandler):
 	def get(self):
 		# returns a list of jobs matching a filter
 		pass
@@ -52,7 +52,7 @@ class Job(webapp2.RequestHandler):
 
 
 app = webapp2.WSGIApplication([
-	(r'/jobs', ListJobs),
+	(r'/jobs', Jobs),
 	(r'/jobs/(\d+)', Job),
 ], debug=True)
 

@@ -993,7 +993,11 @@ class PipelineDbUtils(object):
 class PipelineServiceUtils:
 
 	@staticmethod
-	def bootstrapMessageHandlers(pubsub, logging, config, mode="local"):  # TODO: move topics that aren't required to the configuration file
+	def bootstrapService(gke, config):
+		pass
+
+	@staticmethod
+	def bootstrapMessageHandlers(pubsub, logging, config):  # TODO: move topics that aren't required to the configuration file
 		# create log sinks for pipeline vm logs
 		timestamp = datetime.utcnow().isoformat("T") + "Z"  # RFC3339 timestamp
 
