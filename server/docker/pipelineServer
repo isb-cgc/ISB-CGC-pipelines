@@ -1,59 +1,131 @@
 #!/usr/bin/env python
-import pickle
+import os
+import re
 import webapp2
 from paste import httpserver
-from pipelines.builder import PipelineBuilder
-from pipelines.schema import PipelineSchema
-from pipelines.utils import PipelinesConfig, PipelineDbUtils, PipelineServiceUtils
+from pipelines.routes import *
+from pipelines.utils import PipelineSchema, PipelineBuilder, PipelinesConfig, PipelineDbUtils, PipelineServiceUtils
+
 
 class Jobs(webapp2.RequestHandler):
 	def get(self):
-		# returns a list of jobs matching a filter
-		pass
+		if re.match(JOBS_LIST_CREATE_EXP, self.request.path):
+			pass  # list jobs
 
+		elif re.match(JOB_DESCRIBE_EXP, self.request.path):
+			pass  # describe a particular job
 
-class Job(webapp2.RequestHandler):
+		else:
+			pass  # return "bad request"
+
 	def post(self):
-		# submits a job
-		args = self.request.get("args")
-		config = pickle.loads(self.request.get("config"))
-		dbCredentials = pickle.loads(self.request.get("db-credentials"))
-		googleCredentials = pickle.loads(self.request.get("google-credentials"))
+		if re.match(JOBS_LIST_CREATE_EXP, self.request.path):
+			# submits a job
+			config = PipelinesConfig(path=os.environ["PIPELINES_CONFIG"])
+			pipelineBuilder = PipelineBuilder(config)
 
-		if args.scriptUrl:
-			pipelineSpec = PipelineSchema(args.pipelineName, config, args.logsPath, args.imageName,
-					scriptUrl=args.scriptUrl, cores=args.cores,
-					mem=args.mem, diskSize=args.diskSize, diskType=args.diskType, env=args.env,
-					inputs=args.inputs, outputs=args.outputs, tag=args.tag,
-					preemptible=args.preemptible)
-		elif args.cmd:
-			pipelineSpec = PipelineSchema(args.pipelineName, config, args.logsPath, args.imageName, cmd=args.cmd,
-				cores=args.cores,
-				mem=args.mem, diskSize=args.diskSize, diskType=args.diskType, env=args.env,
-				inputs=args.inputs, outputs=args.outputs, tag=args.tag,
-				preemptible=args.preemptible)
+			pipelineName = self.request.get("pipelineName")
+			logsPath = self.request.get("logsPath")
+			imageName = self.request.get("imageName")
+			cores = self.request.get("cores")
+			mem = self.request.get("mem")
+			diskSize = self.request.get("diskSize")
+			diskType = self.request.get("diskType")
+			env = self.request.get("env")  # TODO: ensure that this endpoint accepts a dict
+			preemptible = self.request.get("preemptible")
+			scriptUrl = self.request.get("scriptUrl")
+			cmd = self.requests.get("cmd")
+			tags = self.requests.get("tags")  # TODO: ensure that this endpoint accepts a list
+			inputs = self.requests.get("inputs")  # TODO: ensure that this endpoint accepts a list
+			outputs = self.requests.get("outputs")  # TODO: ensure that this endpoint accepts a list
 
-		# TODO: translate code below into a server request; move the code below to the server
-		pipelineBuilder = PipelineBuilder(config)
-		pipelineBuilder.addStep(pipelineSpec)
-		pipelineBuilder.run(dbCredentials, googleCredentials)
+			if len(scriptUrl) > 0:
+				pipelineSpec = PipelineSchema(pipelineName, config, logsPath, imageName,
+						scriptUrl=scriptUrl, cores=cores,
+						mem=mem, diskSize=diskSize, diskType=diskType, env=env,
+						inputs=inputs, outputs=outputs, tags=tags,
+						preemptible=preemptible)
+			elif len(cmd) > 0:
+				pipelineSpec = PipelineSchema(pipelineName, config, logsPath, imageName, cmd=cmd,
+					cores=cores,
+					mem=mem, diskSize=diskSize, diskType=diskType, env=env,
+					inputs=inputs, outputs=outputs, tags=tags,
+					preemptible=preemptible)
+
+			# TODO: translate code below into a server request; move the code below to the server
+
+			pipelineBuilder.addStep(pipelineSpec)
+			pipelineBuilder.run()
+
+		else:
+			pass  # return "bad request"
+
+
+class Config(webapp2.RequestHandler):
+	def post(self):
+		if re.match(CONFIG_VIEW_INIT_EXP, self.request.path):
+			pass  # initialize the config file
+
+		elif re.match(CONFIG_EDIT_EXP, self.request.path):
+			pass  # edit the config file
+
+		else:
+			pass  # return "bad request"
 
 	def get(self):
-		# gets the status of a particular job
-		pass
+		if re.match(CONFIG_VIEW_INIT_EXP, self.request.path):
+			pass  # package up the config file contents and return
 
-	def put(self):
-		# updates a job attribute
-		pass
+		else:
+			pass  # return "bad request"
 
-	def delete(self):
-		# deletes a job
-		pass
+
+class DataDisk(webapp2.RequestHandler):
+	def post(self):
+		if re.match(DATADISKS_LIST_CREATE_EXP, self.request.path):
+			pass  # create the data disk(s)
+
+		elif re.match(DATADISK_DESCRIBE_DELETE_EXP, self.request.path):
+			pass  # delete the data disk(s)
+
+		else:
+			pass  # return "bad request"
+
+	def get(self):
+		if re.match(DATADISKS_LIST_CREATE_EXP, self.request.path):
+			pass  # list the data disks given any filters
+
+		elif re.match(DATADISK_DESCRIBE_DELETE_EXP, self.request.path):
+			pass  # describe the data disk(s)
+
+		else:
+			pass  # return "bad request"
+
+
+class Log(webapp2.RequestHandler):
+	def get(self):
+		if re.match(LOG_STDOUT_EXP, self.request.path):
+			pass  # get the stdout log path and return
+
+		elif re.match(LOG_STDERR_EXP, self.request.path):
+			pass  # get the stderr log path and return
+
+		else:
+			pass  # return "bad request"
 
 
 app = webapp2.WSGIApplication([
-	(r'/jobs', Jobs),
-	(r'/jobs/(\d+)', Job),
+	(JOBS_LIST_CREATE_EXP, Jobs),
+	(JOB_DESCRIBE_EXP, Jobs),
+	(JOB_EDIT_EXP, Jobs),
+	(JOB_CANCEL_EXP, Jobs),
+	(JOB_RESTART_EXP, Jobs),
+	(CONFIG_VIEW_INIT_EXP, Config),
+	(CONFIG_EDIT_EXP, Config),
+	(DATADISKS_LIST_CREATE_EXP, DataDisk),
+	(DATADISK_DESCRIBE_DELETE_EXP, DataDisk),
+	(LOG_STDOUT_EXP, Log),
+	(LOG_STDERR_EXP, Log),
 ], debug=True)
 
 

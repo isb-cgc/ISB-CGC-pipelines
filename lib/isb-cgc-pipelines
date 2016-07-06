@@ -11,21 +11,55 @@ PIPELINES_CONFIG_PATH = os.path.join(os.environ["HOME"], ".isb-cgc-pipelines", "
 
 
 def main(args, unknown):
-	if args.subcommand == "bootstrap":
-		config = PipelinesConfig(PIPELINES_CONFIG_PATH)
+	if args.subcommand == "extensions":
+		parser = argparse.ArgumentParser()
+		subparser = parser.add_subparsers(dest="extensions")
 
-		# API service objects
-		credentials = GoogleCredentials.get_application_default()
-		http = credentials.authorize(httplib2.Http())
-		if credentials.access_token_expired:
-			credentials.refresh(http)
+		lst = subparser.add_parser("list")
 
-		pubsub = discovery.build('pubsub', 'v1', http=http)
-		logging = discovery.build('logging', 'v2beta1', http=http)
+		enable = subparser.add_parser("enable")
+		enableGrp = enable.add_mutually_exclusive_group(required=True)
+		enableGrp.add_argument("--k8s")
+		enableGrp.add_argument("--supervisor")
+		# enable.add_argument("--jobCorrection")  # TODO: implement job-correction
 
-		PipelineServiceUtils.bootstrapMessageHandlers(pubsub, logging, config, mode="local")
+		disable = subparser.add_parser("disable")
+		disableGrp = enable.add_mutually_exclusive_group(required=True)
+		disableGrp.add_argument("--k8s")
+		disableGrp.add_argument("--supervisor")
+		# disable.add_argument("--jobCorrection")  # TODO: implement job-correction
 
-	elif args.subcommand == "scheduler":
+		args = parser.parse_known_args(args=unknown)
+		# config = PipelinesConfig(PIPELINES_CONFIG_PATH)  find a way to avoid needing a local config
+
+		if args.extensions == "list":
+			pass
+
+		elif args.extensions == "enable":
+			# API service objects
+			credentials = GoogleCredentials.get_application_default()
+			http = credentials.authorize(httplib2.Http())
+			if credentials.access_token_expired:
+				credentials.refresh(http)
+
+			pubsub = discovery.build('pubsub', 'v1', http=http)
+			logging = discovery.build('logging', 'v2beta1', http=http)
+			PipelineServiceUtils.bootstrapMessageHandlers(pubsub, logging)
+
+			if args.k8s:
+				gke = discovery.build('container', 'v1', http=http)
+				PipelineServiceUtils.bootstrapService(gke, config)
+
+			elif args.supervisor:
+				pass  # configure and start the supervisor scheduler
+
+		elif args.extensions == "disable":
+			pass
+
+		else:
+			pass  # error
+
+	elif args.subcommand == "scheduler":  # TODO: figure out a way to determine whether the supervisor has been enabled
 		config = PipelinesConfig(PIPELINES_CONFIG_PATH)
 		user = os.environ["USER"]
 
@@ -86,7 +120,8 @@ if __name__ == "__main__":
 	parser = argparse.ArgumentParser(description="")
 	subparsers = parser.add_subparsers(dest="subcommand")
 
-	deploy = subparsers.add_parser("bootstrap")
+	extensions = subparsers.add_parser("extensions")
+
 
 	scheduler = subparsers.add_parser("scheduler")
 	scheduler.add_argument("schedulerOperation", choices=["start", "stop"])
