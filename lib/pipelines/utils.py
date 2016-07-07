@@ -606,24 +606,25 @@ class PipelineSchedulerUtils(object):
 		print "Scheduler stopped successfully!"
 
 	@staticmethod
-	def submitPipeline(args, config):
+	def submitPipeline(config, pipelineName=None, logsPath=None, imageName=None, scriptUrl=None, cmd=None, cores=None, mem=None, diskSize=None, diskType=None, env=None, inputs=None, outputs=None, tag=None, preemptible=None, syncOutputs=None):
 
 		# send the request message to the local rabbitmq server
-		if args.scriptUrl:
-			pipelineSpec = PipelineSchema(args.pipelineName, config, args.logsPath, args.imageName,
-			                              scriptUrl=args.scriptUrl, cores=args.cores,
-			                              mem=args.mem, diskSize=args.diskSize, diskType=args.diskType, env=args.env,
-			                              inputs=args.inputs, outputs=args.outputs, tag=args.tag,
-			                              preemptible=args.preemptible)
-		elif args.cmd:
-			pipelineSpec = PipelineSchema(args.pipelineName, config, args.logsPath, args.imageName, cmd=args.cmd,
-			                              cores=args.cores,
-			                              mem=args.mem, diskSize=args.diskSize, diskType=args.diskType, env=args.env,
-			                              inputs=args.inputs, outputs=args.outputs, tag=args.tag,
-			                              preemptible=args.preemptible)
+		if scriptUrl:
+			pipelineSpec = PipelineSchema(pipelineName, config, logsPath, imageName,
+			                              scriptUrl=scriptUrl, cores=cores,
+			                              mem=mem, diskSize=diskSize, diskType=diskType, env=env,
+			                              inputs=inputs, outputs=outputs, tag=tag,
+			                              preemptible=preemptible, syncOutputs=syncOutputs)
+		elif cmd:
+			pipelineSpec = PipelineSchema(pipelineName, config, logsPath, imageName,
+			                              cmd=cmd, cores=cores,
+			                              mem=mem, diskSize=diskSize, diskType=diskType, env=env,
+			                              inputs=inputs, outputs=outputs, tag=tag,
+			                              preemptible=preemptible, syncOutputs=syncOutputs)
 
 		pipelineBuilder = PipelineBuilder(config)
 		pipelineBuilder.addStep(pipelineSpec)
+
 		pipelineBuilder.run()
 
 	@staticmethod
@@ -712,93 +713,97 @@ class PipelineSchedulerUtils(object):
 		pipelineDbUtils.closeConnection()
 
 	@staticmethod
-	def getJobsList(args, unknown, config):  # TODO: reimplement
+	def getJobsList(config, pipeline=None, tag=None, status=None, createTimeAfter=None, limit=None):  # TODO: reimplement
 		header = "JOBID%sPIPELINE%sOPERATION ID%sTAG%sSTATUS%sCREATE TIME%sPREEMPTIONS\n"
 		jobStatusString = "{jobId}%s{pipeline}%s{operationId}%s{tag}%s{status}%s{createTime}%s{preemptions}\n"
 
 		pipelineDbUtils = PipelineDbUtils(config)
 
-		parser = argparse.ArgumentParser()
-		parser.add_argument("--pipeline")
-		parser.add_argument("--tag")
-		parser.add_argument("--status", choices=["running", "waiting", "succeeded", "failed", "error", "preempted"])
-		parser.add_argument("--createTimeAfter")
-		parser.add_argument("--limit", default=50)
-
-		args = parser.parse_args(args=unknown, namespace=args)
-
 		select = ["job_id", "operation_id", "pipeline_name", "tag", "current_status", "create_time", "preemptions"]
 		where = {}
 
-		if args.pipeline:
-			where["pipeline_name"] = args.pipeline
+		if pipeline:
+			where["pipeline_name"] = pipeline
 
-		if args.tag:
-			where["tag"] = args.tag
+		if tag:
+			where["tag"] = tag
 
-		if args.status:
-			where["current_status"] = args.status
+		if status:
+			where["current_status"] = status
 
-		if args.createTimeAfter:
+		if createTimeAfter:
 			where["create_time"] = {
-				"value": args.createTimeAfter,
+				"value": createTimeAfter,
 				"operator": ">="
 			}
 
-		jobs = pipelineDbUtils.getJobInfo(select=select, where=where)
+		try:
+			jobs = pipelineDbUtils.getJobInfo(select=select, where=where)
 
-		pipelineDbUtils.closeConnection()
-
-		def fieldPadding(maxLen, actualLen):
-			return ''.join([' ' for x in range(maxLen - actualLen + 4)])
-
-		if len(jobs) > 0:
-			jobIdLengths = [len(str(x.job_id)) if x.job_id is not None else len(str("None")) for x in jobs]
-			jobIdLengths.append(len("JOBID"))
-			maxJobIdLen = max(jobIdLengths)
-
-			pipelineLengths = [len(x.pipeline_name) if x.pipeline_name is not None else len(str("None")) for x in jobs]
-			pipelineLengths.append(len("PIPELINE"))
-			maxPipelineLen = max(pipelineLengths)
-
-			operationIdLengths = [len(x.operation_id) if x.operation_id is not None else len(str("None")) for x in jobs]
-			operationIdLengths.append(len("OPERATION ID"))
-			maxOperationIdLen = max(operationIdLengths)
-
-			statusLengths = [len(x.current_status) if x.current_status is not None else len(str("None")) for x in jobs]
-			statusLengths.append(len("STATUS"))
-			maxStatusLen = max(statusLengths)
-
-			tagLengths = [len(x.tag) if x.tag is not None else len(str("None")) for x in jobs]
-			tagLengths.append(len("TAG"))
-			maxTagLen = max(tagLengths)
-
-			createTimeLengths = [len(x.create_time) if x.create_time is not None else len(str("None")) for x in jobs]
-			createTimeLengths.append(len("CREATE TIME"))
-			maxCreateTimeLen = max(createTimeLengths)
-
-			print header % (fieldPadding(maxJobIdLen, len("JOBID")), fieldPadding(maxPipelineLen, len("PIPELINE")),
-			                fieldPadding(maxOperationIdLen, len("OPERATION ID")), fieldPadding(maxTagLen, len("TAG")),
-			                fieldPadding(maxStatusLen, len("STATUS")),
-			                fieldPadding(maxCreateTimeLen, len("CREATE TIME")))
-			for j in jobs:
-				if j.create_time is not None:
-					ct = j.create_time
-				else:
-					ct = "None"
-				if j.operation_id is not None:
-					op = j.operation_id
-				else:
-					op = "None"
-
-				print jobStatusString.format(jobId=j.job_id, pipeline=j.pipeline_name, operationId=op, tag=j.tag,
-				                             status=j.current_status, createTime=ct, preemptions=j.preemptions) % (
-				      fieldPadding(maxJobIdLen, len(str(j.job_id))), fieldPadding(maxPipelineLen, len(j.pipeline_name)),
-				      fieldPadding(maxOperationIdLen, len(op)), fieldPadding(maxTagLen, len(j.tag)),
-				      fieldPadding(maxStatusLen, len(j.current_status)), fieldPadding(maxCreateTimeLen, len(ct)))
+		except sqlite3.OperationalError as e:
+			raise ValueError("Couldn't get the jobs list: {reason}".format(reason=e))
 
 		else:
-			print "No jobs found"
+			def fieldPadding(maxLen, actualLen):
+				return ''.join([' ' for x in range(maxLen - actualLen + 4)])
+
+			if len(jobs) > 0:
+				jobStrings = []
+
+				jobIdLengths = [len(str(x.job_id)) if x.job_id is not None else len(str("None")) for x in jobs]
+				jobIdLengths.append(len("JOBID"))
+				maxJobIdLen = max(jobIdLengths)
+
+				pipelineLengths = [len(x.pipeline_name) if x.pipeline_name is not None else len(str("None")) for x in
+				                   jobs]
+				pipelineLengths.append(len("PIPELINE"))
+				maxPipelineLen = max(pipelineLengths)
+
+				operationIdLengths = [len(x.operation_id) if x.operation_id is not None else len(str("None")) for x in
+				                      jobs]
+				operationIdLengths.append(len("OPERATION ID"))
+				maxOperationIdLen = max(operationIdLengths)
+
+				statusLengths = [len(x.current_status) if x.current_status is not None else len(str("None")) for x in
+				                 jobs]
+				statusLengths.append(len("STATUS"))
+				maxStatusLen = max(statusLengths)
+
+				tagLengths = [len(x.tag) if x.tag is not None else len(str("None")) for x in jobs]
+				tagLengths.append(len("TAG"))
+				maxTagLen = max(tagLengths)
+
+				createTimeLengths = [len(x.create_time) if x.create_time is not None else len(str("None")) for x in
+				                     jobs]
+				createTimeLengths.append(len("CREATE TIME"))
+				maxCreateTimeLen = max(createTimeLengths)
+
+				jobStrings.append(header % (fieldPadding(maxJobIdLen, len("JOBID")), fieldPadding(maxPipelineLen, len("PIPELINE")),
+				                fieldPadding(maxOperationIdLen, len("OPERATION ID")),
+				                fieldPadding(maxTagLen, len("TAG")),
+				                fieldPadding(maxStatusLen, len("STATUS")),
+				                fieldPadding(maxCreateTimeLen, len("CREATE TIME"))))
+
+				for j in jobs:
+					if j.create_time is not None:
+						ct = j.create_time
+					else:
+						ct = "None"
+					if j.operation_id is not None:
+						op = j.operation_id
+					else:
+						op = "None"
+
+					jobStrings.append(jobStatusString.format(jobId=j.job_id, pipeline=j.pipeline_name, operationId=op, tag=j.tag,
+					        status=j.current_status, createTime=ct, preemptions=j.preemptions) % (
+						    fieldPadding(maxJobIdLen, len(str(j.job_id))),
+						    fieldPadding(maxPipelineLen, len(j.pipeline_name)),
+						    fieldPadding(maxOperationIdLen, len(op)), fieldPadding(maxTagLen, len(j.tag)),
+						    fieldPadding(maxStatusLen, len(j.current_status)),
+						    fieldPadding(maxCreateTimeLen, len(ct))))
+
+			return jobStrings
+
 
 	@staticmethod
 	def editPipeline(args, config):

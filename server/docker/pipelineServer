@@ -1,64 +1,75 @@
 #!/usr/bin/env python
 import os
 import re
+import json
 import webapp2
+from StringIO import StringIO
 from paste import httpserver
 from pipelines.routes import *
-from pipelines.utils import PipelineSchema, PipelineBuilder, PipelinesConfig, PipelineDbUtils, PipelineServiceUtils
+from pipelines.utils import PipelineSchema, PipelineBuilder, PipelinesConfig, PipelineDbUtils, PipelineServiceUtils, PipelineSchedulerUtils
+
+
+CONFIG = PipelinesConfig(path=os.environ["PIPELINES_CONFIG"])
 
 
 class Jobs(webapp2.RequestHandler):
 	def get(self):
-		if re.match(JOBS_LIST_CREATE_EXP, self.request.path):
-			pass  # list jobs
+		kwargs = {}
 
-		elif re.match(JOB_DESCRIBE_EXP, self.request.path):
+		if re.match(JOBS_LIST_CREATE_EXP, self.request.path):
+			kwargs["pipeline"] = self.request.get("pipeline")
+			kwargs["tag"] = self.request.get("tag")
+			kwargs["status"] = self.request.get("status")
+			kwargs["createTimeAfter"] = self.request.get("createTimeAfter")
+			kwargs["limit"] = self.request.get("limit")
+
+			try:
+				jobsList = PipelineSchedulerUtils.getJobsList(CONFIG, **kwargs)
+
+			except ValueError as e:
+				self.response.set_status(400, e)
+
+			else:
+				resp = {
+					"jobsList": jobsList
+				}
+
+				self.response.out = StringIO(json.dumps(resp))
+				self.response.set_status(200)
+
+		elif re.match(JOB_DESCRIBE_EXP, self.request.path):  # TODO: implement
 			pass  # describe a particular job
 
 		else:
-			pass  # return "bad request"
+			self.response.set_status(404, "Resource {r} not found".format(r=self.request.path))
 
 	def post(self):
+		kwargs = json.loads(self.request.body)
+
 		if re.match(JOBS_LIST_CREATE_EXP, self.request.path):
 			# submits a job
-			config = PipelinesConfig(path=os.environ["PIPELINES_CONFIG"])
-			pipelineBuilder = PipelineBuilder(config)
+			try:
+				PipelineSchedulerUtils.submitPipeline(CONFIG, **kwargs)
+			except:  # TODO: better exception handling in the utility classes
+				self.response.set_status(400)
 
-			pipelineName = self.request.get("pipelineName")
-			logsPath = self.request.get("logsPath")
-			imageName = self.request.get("imageName")
-			cores = self.request.get("cores")
-			mem = self.request.get("mem")
-			diskSize = self.request.get("diskSize")
-			diskType = self.request.get("diskType")
-			env = self.request.get("env")  # TODO: ensure that this endpoint accepts a dict
-			preemptible = self.request.get("preemptible")
-			scriptUrl = self.request.get("scriptUrl")
-			cmd = self.requests.get("cmd")
-			tags = self.requests.get("tags")  # TODO: ensure that this endpoint accepts a list
-			inputs = self.requests.get("inputs")  # TODO: ensure that this endpoint accepts a list
-			outputs = self.requests.get("outputs")  # TODO: ensure that this endpoint accepts a list
+			else:
+				self.response.set_status(201)
 
-			if len(scriptUrl) > 0:
-				pipelineSpec = PipelineSchema(pipelineName, config, logsPath, imageName,
-						scriptUrl=scriptUrl, cores=cores,
-						mem=mem, diskSize=diskSize, diskType=diskType, env=env,
-						inputs=inputs, outputs=outputs, tags=tags,
-						preemptible=preemptible)
-			elif len(cmd) > 0:
-				pipelineSpec = PipelineSchema(pipelineName, config, logsPath, imageName, cmd=cmd,
-					cores=cores,
-					mem=mem, diskSize=diskSize, diskType=diskType, env=env,
-					inputs=inputs, outputs=outputs, tags=tags,
-					preemptible=preemptible)
+		elif re.match(JOB_EDIT_EXP, self.request.path):
+			# edit job values given by **kwargs
+			PipelineSchedulerUtils.editPipeline(CONFIG, **kwargs)
 
-			# TODO: translate code below into a server request; move the code below to the server
+		elif re.match(JOB_RESTART_EXP, self.request.path):
+			# restart a job
+			PipelineSchedulerUtils.restartJobs(CONFIG, **kwargs)
 
-			pipelineBuilder.addStep(pipelineSpec)
-			pipelineBuilder.run()
+		elif re.match(JOB_CANCEL_EXP, self.request.path):
+			# stop/cancel a job
+			PipelineSchedulerUtils.stopPipeline(CONFIG, **kwargs)
 
 		else:
-			pass  # return "bad request"
+			self.response.set_status(404, "Resource {r} not found".format(r=self.request.path))
 
 
 class Config(webapp2.RequestHandler):
