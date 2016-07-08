@@ -4,7 +4,7 @@ echo 'deb http://www.rabbitmq.com/debian/ testing main' >> /etc/apt/sources.list
 wget -O- https://www.rabbitmq.com/rabbitmq-release-signing-key.asc | apt-key add -
 apt-get -y update
 apt-get -y install build-essential python-dev libffi-dev libssl-dev python-pip git wget sqlite3 supervisor rabbitmq-server
-pip install -U virtualenv google-api-python-client pyinotify json-spec python-dateutil pika
+pip install -U virtualenv google-api-python-client pyinotify json-spec python-dateutil pika Jinja2
 
 groupadd supervisor
 chgrp -R supervisor /etc/supervisor /var/log/supervisor

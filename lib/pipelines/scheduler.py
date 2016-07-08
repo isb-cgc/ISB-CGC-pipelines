@@ -1,128 +1,21 @@
 import os
-import sys
-import pika
 import json
-import sqlite3
 import subprocess
-from time import time
 from tempfile import mkstemp
-from datetime import datetime
-from ConfigParser import SafeConfigParser, NoOptionError, NoSectionError
-from pipelines.db import PipelineDbUtils
+from pipelines.db import PipelineDatabase, PipelineDatabaseError
+from pipelines.schema import PipelineSchema
+from pipelines.builder import PipelineBuilder, PipelineSchemaValidationError, PipelineSubmitError
+from pipelines.queue import PipelineQueue, PipelineQueueError
 
 # TODO: break this class into multiple classes and move anything using the db utils class to another file
 
-class PipelineSchedulerUtils(object):
-	@staticmethod
-	def startScheduler(config, user):
-		# set up the rabbitmq queues
-		rabbitmqConn = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
-		channel = rabbitmqConn.channel()
 
-		channel.queue_declare(queue='WAIT_Q', durable=True)
-		channel.queue_declare(queue='CANCEL_Q', durable=True)
-		rabbitmqConn.close()
+class PipelineSchedulerError(Exception):
+	def __init__(self, msg):
+		super(PipelineSchedulerError, self).__init__()
+		self.msg = msg
 
-		pipelineDbUtils = PipelineDbUtils(config)
-		pipelineDbUtils.createJobTables()
-
-		c = SafeConfigParser()
-
-		try:
-			c.readfp(open("/etc/supervisor/supervisord.conf"))
-		except IOError as e:
-			print "ERROR: supervisor config file (/etc/supervisor/supervisord.conf) -- double check your supervisor installation."
-			exit(-1)
-		else:
-			if not c.has_section("program:pipelineJobScheduler"):
-				c.add_section("program:pipelineJobScheduler")
-
-			if not c.has_section("program:pipelineJobCanceller"):
-				c.add_section("program:pipelineJobCanceller")
-
-			if not c.has_section("program:pipelinePreemptedLogsHandler"):
-				c.add_section("program:pipelinePreemptedLogsHandler")
-
-			if not c.has_section("program:pipelineDeleteLogsHandler"):
-				c.add_section("program:pipelineDeleteLogsHandler")
-
-			if not c.has_section("program:pipelineInsertLogsHandler"):
-				c.add_section("program:pipelineInsertLogsHandler")
-
-			c.set("program:pipelineJobScheduler", "process_name", "pipelineJobScheduler")
-			c.set("program:pipelineJobScheduler", "command",
-			      "pipelineJobScheduler --config {config}".format(config=config.path))
-			c.set("program:pipelineJobScheduler", "environment",
-			      "PYTHONPATH={modulePath}".format(modulePath=MODULE_PATH))
-			c.set("program:pipelineJobScheduler", "numprocs", "1")
-			c.set("program:pipelineJobScheduler", "autostart", "true")
-			c.set("program:pipelineJobScheduler", "autorestart", "true")
-			c.set("program:pipelineJobScheduler", "user", user)
-
-			c.set("program:pipelineJobCanceller", "process_name", "pipelineJobCanceller")
-			c.set("program:pipelineJobCanceller", "command",
-			      "pipelineJobCanceller --config {config}".format(config=config.path))
-			c.set("program:pipelineJobCanceller", "environment",
-			      "PYTHONPATH={modulePath}".format(modulePath=MODULE_PATH))
-			c.set("program:pipelineJobCanceller", "numprocs", "1")
-			c.set("program:pipelineJobCanceller", "autostart", "true")
-			c.set("program:pipelineJobCanceller", "autorestart", "true")
-			c.set("program:pipelineJobCanceller", "user", user)
-
-			c.set("program:pipelineInsertLogsHandler", "process_name", "%(program_name)s_%(process_num)s")
-			c.set("program:pipelineInsertLogsHandler", "command",
-			      "receivePipelineVmLogs --config {config} --subscription pipelineVmInsert".format(config=config.path))
-			c.set("program:pipelineInsertLogsHandler", "environment",
-			      "PYTHONPATH={modulePath}".format(modulePath=MODULE_PATH))
-			c.set("program:pipelineInsertLogsHandler", "numprocs",
-			      "10")  # TODO: come up with a formula for determining the number of processes
-			c.set("program:pipelineInsertLogsHandler", "autostart", "true")
-			c.set("program:pipelineInsertLogsHandler", "autorestart", "true")
-			c.set("program:pipelineInsertLogsHandler", "user", user)
-
-			c.set("program:pipelinePreemptedLogsHandler", "process_name", "%(program_name)s_%(process_num)s")
-			c.set("program:pipelinePreemptedLogsHandler", "command",
-			      "receivePipelineVmLogs --config {config} --subscription pipelineVmPreempted".format
-				      (config=config.path))
-			c.set("program:pipelinePreemptedLogsHandler", "environment",
-			      "PYTHONPATH={modulePath}".format(modulePath=MODULE_PATH))
-			c.set("program:pipelinePreemptedLogsHandler", "numprocs", "10")  # TODO: come up with a formula for determining the number of processes
-			c.set("program:pipelinePreemptedLogsHandler", "autostart", "true")
-			c.set("program:pipelinePreemptedLogsHandler", "autorestart", "true")
-			c.set("program:pipelinePreemptedLogsHandler", "user", user)
-
-			c.set("program:pipelineDeleteLogsHandler", "process_name", "%(program_name)s_%(process_num)s")
-			c.set("program:pipelineDeleteLogsHandler", "command",
-			      "receivePipelineVmLogs --config {config} --subscription pipelineVmDelete".format(config=config.path))
-			c.set("program:pipelineDeleteLogsHandler", "environment", "PYTHONPATH={modulePath}".format(modulePath=MODULE_PATH))
-			c.set("program:pipelineDeleteLogsHandler", "numprocs", "10")  # TODO: come up with a formula for determining the number of processes
-			c.set("program:pipelineDeleteLogsHandler", "autostart", "true")
-			c.set("program:pipelineDeleteLogsHandler", "autorestart", "true")
-			c.set("program:pipelineDeleteLogsHandler", "user", user)
-
-			with open("/etc/supervisor/supervisord.conf", "w") as f:
-				c.write(f)
-
-		try:
-			subprocess.check_call(["sudo", "service", "supervisor", "restart"])
-
-		except subprocess.CalledProcessError as e:
-			print "ERROR: couldn't restart the scheduler (supervisor): {reason}".format(reason=e)
-			exit(-1)
-
-		print "Scheduler started successfully!"
-
-	@staticmethod
-	def stopScheduler():
-		try:
-			subprocess.check_call(["sudo", "service", "supervisor", "stop"])
-
-		except subprocess.CalledProcessError as e:
-			print "ERROR: couldn't stop the scheduler (supervisor): {reason}".format(reason=e)
-			exit(-1)
-
-		print "Scheduler stopped successfully!"
-
+class PipelineScheduler(object):
 	@staticmethod
 	def submitPipeline(config, pipelineName=None, logsPath=None, imageName=None, scriptUrl=None, cmd=None, cores=None, mem=None, diskSize=None, diskType=None, env=None, inputs=None, outputs=None, tag=None, preemptible=None, syncOutputs=None):
 
@@ -143,25 +36,40 @@ class PipelineSchedulerUtils(object):
 		pipelineBuilder = PipelineBuilder(config)
 		pipelineBuilder.addStep(pipelineSpec)
 
-		pipelineBuilder.run()
+		try:
+			pipelineBuilder.run()
+		except PipelineSchemaValidationError as e:
+			raise PipelineSchedulerError("Schema validation failed: {reason}".format(reason=e))
+		except PipelineSubmitError as e:
+			raise PipelineSchedulerError("Submission failed: {reason}".format(reason=e))
+
 
 	@staticmethod
 	def stopPipeline(args, config):
-		pipelineQueueUtils = PipelineQueueUtils('CANCEL_Q')
+		pipelineQueue = PipelineQueue('CANCEL_Q')
 
-		pipelineDbUtils = PipelineDbUtils(config)
+		pipelineDatabase = PipelineDatabase(config)
 
 		if args.jobId:
-			jobInfo = pipelineDbUtils.getJobInfo(select=["current_status", "operation_id", "job_id"],
-			                                     where={"job_id": args.jobId})
+			try:
+				jobInfo = pipelineDatabase.getJobInfo(select=["current_status", "operation_id", "job_id"], where={"job_id": args.jobId})
+
+			except PipelineDatabaseError as e:
+				raise PipelineSchedulerError("Couldn't stop pipeline: {reason}".format(reason=e))
 
 		elif args.pipeline:
-			jobInfo = pipelineDbUtils.getJobInfo(select=["current_status", "operation_id", "job_id"],
-			                                     where={"pipeline_name": args.pipeline})
+			try:
+				jobInfo = pipelineDatabase.getJobInfo(select=["current_status", "operation_id", "job_id"], where={"pipeline_name": args.pipeline})
+
+			except PipelineDatabaseError as e:
+				raise PipelineSchedulerError("Couldn't stop pipeline: {reason}".format(reason=e))
 
 		elif args.tag:
-			jobInfo = pipelineDbUtils.getJobInfo(select=["current_status", "operation_id", "job_id"],
-			                                     where={"tag": args.tag})
+			try:
+				jobInfo = pipelineDatabase.getJobInfo(select=["current_status", "operation_id", "job_id"], where={"tag": args.tag})
+
+			except PipelineDatabaseError as e:
+				raise PipelineSchedulerError("Couldn't stop pipeline: {reason}".format(reason=e))
 
 		for j in jobInfo:
 			if j.current_status == "RUNNING":
@@ -169,48 +77,71 @@ class PipelineSchedulerUtils(object):
 					"job_id": j.job_id,
 					"operation_id": j.operation_id
 				}
-				pipelineQueueUtils.publish(json.dumps(msg))
+				try:
+					pipelineQueue.publish(json.dumps(msg))
+				except PipelineQueueError as e:
+					raise PipelineSchedulerError("Couldn't stop pipeline: {reason}".format(reason=e))
 
 
 	@staticmethod
 	def restartJobs(args, config):  # TODO: reimplement
-		pipelineDbUtils = PipelineDbUtils(config)
-		pipelineQueueUtils = PipelineQueueUtils('WAIT_Q')
+		pipelineDatabase = PipelineDatabase(config)
+		pipelineQueue = PipelineQueue('WAIT_Q')
 
 		if args.jobId:
-			request = json.loads \
-				(pipelineDbUtils.getJobInfo(select=["request"], where={"job_id": args.jobId})[0].request)
+			try:
+				jobInfo = pipelineDatabase.getJobInfo(select=["request"], where={"job_id": args.jobId})[0].request
+
+			except PipelineDatabaseError as e:
+				raise PipelineSchedulerError("Couldn't restart pipeline: {reason}".format(reason=e))
+
+			request = json.loads(jobInfo)
 			msg = {
 				"job_id": args.jobId,
 				"request": request
 			}
-			pipelineQueueUtils.publish(json.dumps(msg))
+
+			try:
+				pipelineQueue.publish(json.dumps(msg))
+
+			except PipelineQueueError as e:
+				raise PipelineSchedulerError("Couldn't restart pipeline: {reason}".format(reason=e))
 
 		if args.preempted:
-			preempted = pipelineDbUtils.getJobInfo(select=["job_id", "request"], where={"current_status": "PREEMPTED"})
+			try:
+				preempted = pipelineDatabase.getJobInfo(select=["job_id", "request"], where={"current_status": "PREEMPTED"})
+
+			except PipelineDatabaseError as e:
+				raise PipelineSchedulerError("Couldn't restart pipeline: {reason}".format(reason=e))
 
 			for p in preempted:
 				msg = {
 					"job_id": p.job_id,
 					"request": json.loads(p.request)
 				}
-				pipelineQueueUtils.publish(json.dumps(msg))
+
+				try:
+					pipelineQueue.publish(json.dumps(msg))
+
+				except PipelineQueueError as e:
+					raise PipelineSchedulerError("Couldn't restart pipeline: {reason}".format(reason=e))
 
 	@staticmethod
 	def getJobLogs(args, config):  # TODO: reimplement
-		pipelineDbUtils = PipelineDbUtils(config)
+		pipelineDatabase = PipelineDatabase(config)
 
-		jobInfo = pipelineDbUtils.getJobInfo(select=["stdout_log", "stderr_log", "gcs_log_path"],
-		                                     where={"job_id": args.jobId})
+		try:
+			jobInfo = pipelineDatabase.getJobInfo(select=["stdout_log", "stderr_log", "gcs_log_path"], where={"job_id": args.jobId})
+
+		except PipelineDatabaseError as e:
+			raise PipelineSchedulerError("Couldn't get job logs: {reason}".format(reason=e))
 
 		with open(os.devnull, 'w') as fnull:
 			if args.stdout:
 				try:
-					stdoutLogFile = subprocess.check_output(
-						["gsutil", "cat", os.path.join(jobInfo[0].gcs_log_path, jobInfo[0].stdout_log)], stderr=fnull)
+					stdoutLogFile = subprocess.check_output(["gsutil", "cat", os.path.join(jobInfo[0].gcs_log_path, jobInfo[0].stdout_log)], stderr=fnull)
 				except subprocess.CalledProcessError as e:
-					print "ERROR: couldn't get the stdout log : {reason}".format(reason=e)
-					exit(-1)
+					raise PipelineSchedulerError("Couldn't get the stdout log : {reason}".format(reason=e))
 
 				print "STDOUT:\n"
 				print stdoutLogFile
@@ -218,25 +149,21 @@ class PipelineSchedulerUtils(object):
 
 			if args.stderr:
 				try:
-					stderrLogFile = subprocess.check_output(
-						["gsutil", "-q", "cat", os.path.join(jobInfo[0].gcs_log_path, jobInfo[0].stderr_log)],
-						stderr=fnull)
+					stderrLogFile = subprocess.check_output(["gsutil", "-q", "cat", os.path.join(jobInfo[0].gcs_log_path, jobInfo[0].stderr_log)], stderr=fnull)
+
 				except subprocess.CalledProcessError as e:
-					print "ERROR: couldn't get the stderr log : {reason}".format(reason=e)
-					exit(-1)
+					raise PipelineSchedulerError("Couldn't get the stderr log : {reason}".format(reason=e))
 
 				print "STDERR:\n"
 				print stderrLogFile
 				print "---------\n"
-
-		pipelineDbUtils.closeConnection()
 
 	@staticmethod
 	def getJobsList(config, pipeline=None, tag=None, status=None, createTimeAfter=None, limit=None):  # TODO: reimplement
 		header = "JOBID%sPIPELINE%sOPERATION ID%sTAG%sSTATUS%sCREATE TIME%sPREEMPTIONS\n"
 		jobStatusString = "{jobId}%s{pipeline}%s{operationId}%s{tag}%s{status}%s{createTime}%s{preemptions}\n"
 
-		pipelineDbUtils = PipelineDbUtils(config)
+		pipelineDatabase = PipelineDatabase(config)
 
 		select = ["job_id", "operation_id", "pipeline_name", "tag", "current_status", "create_time", "preemptions"]
 		where = {}
@@ -257,10 +184,10 @@ class PipelineSchedulerUtils(object):
 			}
 
 		try:
-			jobs = pipelineDbUtils.getJobInfo(select=select, where=where)
+			jobs = pipelineDatabase.getJobInfo(select=select, where=where)
 
-		except sqlite3.OperationalError as e:
-			raise ValueError("Couldn't get the jobs list: {reason}".format(reason=e))
+		except PipelineDatabaseError as e:
+			raise PipelineSchedulerError("Couldn't get the jobs list: {reason}".format(reason=e))
 
 		else:
 			def fieldPadding(maxLen, actualLen):
@@ -326,11 +253,14 @@ class PipelineSchedulerUtils(object):
 			return jobStrings
 
 
-	@staticmethod
+	@staticmethod  # TODO: split this function so that manual edits happen client side, while programmatic edits happen server side
 	def editPipeline(args, config):
-		pipelineDbUtils = PipelineDbUtils(config)
+		pipelineDatabase = PipelineDatabase(config)
 
-		request = json.loads(pipelineDbUtils.getJobInfo(select=["request"], where={"job_id": args.jobId})[0].request)
+		try:
+			request = json.loads(pipelineDatabase.getJobInfo(select=["request"], where={"job_id": args.jobId})[0].request)
+		except PipelineDatabaseError as e:
+			raise PipelineSchedulerError("Couldn't edit the pipeline: {reason}".format(reason=e))
 
 		_, tmp = mkstemp()
 		with open(tmp, 'w') as f:
@@ -345,19 +275,7 @@ class PipelineSchedulerUtils(object):
 			with open(tmp, 'r') as f:
 				request = json.load(f)
 
-			pipelineDbUtils.updateJob(args.jobId, keyName="job_id", setValues={"request": json.dumps(request)})
+			pipelineDatabase.updateJob(args.jobId, keyName="job_id", setValues={"request": json.dumps(request)})
 		else:
 			print "ERROR: there was a problem editing the request"
 			exit(-1)
-
-	@staticmethod
-	def writeStdout(s):
-		ts = datetime.fromtimestamp(time()).strftime('%Y-%m-%d %H:%M:%S')
-		sys.stdout.write('\t'.join([ts, s]) + '\n')
-		sys.stdout.flush()
-
-	@staticmethod
-	def writeStderr(s):
-		ts = datetime.fromtimestamp(time()).strftime('%Y-%m-%d %H:%M:%S')
-		sys.stderr.write('\t'.join([ts, s]) + '\n')
-		sys.stderr.flush()

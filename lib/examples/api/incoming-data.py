@@ -2,7 +2,8 @@ import os
 import argparse
 from pipelines.builder import PipelineBuilder
 from pipelines.schema import PipelineSchema
-from pipelines.utils import PipelinesConfig, DataUtils
+from pipelines.config import PipelineConfig
+from pipelines.data import DataUtils
 
 import pprint
 
@@ -24,9 +25,9 @@ args = parser.parse_args()
 
 configPath = os.path.join(os.environ["HOME"], ".isb-cgc-pipelines", "config")
 
-pipelinesConfig = PipelinesConfig(configPath)
+PipelineConfig = PipelineConfig(configPath)
 
-pipelineBuilder = PipelineBuilder(pipelinesConfig)
+pipelineBuilder = PipelineBuilder(PipelineConfig)
 
 setMetaFiles = []
 
@@ -34,7 +35,7 @@ files = DataUtils.getAnalysisDetail(args.analysisId)["result_set"]["results"][0]
 
 objectPath = DataUtils.constructObjectPath(args.analysisId, args.cghubOutput)
 
-cghubSchema = PipelineSchema("cghub", pipelinesConfig, args.cghubLogs, "b.gcr.io/isb-cgc-public-docker-images/gtdownload",
+cghubSchema = PipelineSchema("cghub", PipelineConfig, args.cghubLogs, "b.gcr.io/isb-cgc-public-docker-images/gtdownload",
                              scriptUrl=args.cghubScript,
                              cores=4,
                              diskSize=DataUtils.calculateDiskSize(analysisId=args.analysisId, roundToNearestGbInterval=100),
@@ -75,7 +76,7 @@ for f in files:
 
 # FASTQC STEP
 fastqcOutput = DataUtils.constructObjectPath(args.analysisId, args.fastqcOutput)
-fastqcSchema = PipelineSchema("fastqc", pipelinesConfig, args.fastqcLogs, "b.gcr.io/isb-cgc-public-docker-images/fastqc",
+fastqcSchema = PipelineSchema("fastqc", PipelineConfig, args.fastqcLogs, "b.gcr.io/isb-cgc-public-docker-images/fastqc",
                               scriptUrl="gs://isb-cgc-data-02-misc/pipeline-scripts/fastqc.sh",
                               diskSize=DataUtils.calculateDiskSize(analysisId=args.analysisId, roundToNearestGbInterval=100),
                               diskType="PERSISTENT_SSD",
@@ -95,7 +96,7 @@ setMetaParents.append(fastqcSchema)
 if foundBam:
 	if not foundBai:
 		baiFileName = "{filename}.bai".format(filename=bamFileName)
-		samtoolsIndexSchema = PipelineSchema("samtools-index", pipelinesConfig, args.samtoolsIndexLogs, "b.gcr.io/isb-cgc-public-docker-images/samtools:1.3.1",
+		samtoolsIndexSchema = PipelineSchema("samtools-index", PipelineConfig, args.samtoolsIndexLogs, "b.gcr.io/isb-cgc-public-docker-images/samtools:1.3.1",
 		                                     cmd="samtools index {filename}".format(filename=bamFileName),
 		                                     diskSize=DataUtils.calculateDiskSize(analysisId=args.analysisId, roundToNearestGbInterval=100),
 		                                     diskType="PERSISTENT_SSD",
@@ -116,7 +117,7 @@ if foundBam:
 
 # SETMETA STEP
 
-setMetaSchema = PipelineSchema('setmeta', pipelinesConfig, args.setMetaLogs, "google/cloud-sdk",
+setMetaSchema = PipelineSchema('setmeta', PipelineConfig, args.setMetaLogs, "google/cloud-sdk",
                                cmd='gsutil setmeta -h \"x-goog-meta-analysis-id:{analysisId}\" {setMetaFiles}'.format(analysisId=args.analysisId, setMetaFiles=' '.join(setMetaFiles)),
                                diskSize=10,
                                tag=args.analysisId,

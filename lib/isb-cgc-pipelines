@@ -7,10 +7,10 @@ import httplib2
 from googleapiclient import discovery
 from oauth2client.client import GoogleCredentials
 from pipelines.routes import *
-from pipelines.utils import PipelinesConfig, PipelineServiceUtils, PipelineSchedulerUtils
-
-
-CLIENT_CONFIG_PATH = os.path.join(os.environ["HOME"], ".isb-cgc-pipelines", "config")
+from pipelines.paths import *
+from pipelines.config import PipelineConfig
+from pipelines.service import PipelineService
+from pipelines.scheduler import PipelineScheduler
 
 
 def sendRequest(ip, port, route, data=None):
@@ -274,13 +274,13 @@ if __name__ == "__main__":
 				# TODO: get the logs path from the response and use `gsutil cat ... ` to print
 
 	elif args.subcommand == "scheduler":  # TODO: check to see if config file exists -- if so, check the configuration for enabled extensions; otherwise report an error if the scheduler subcommand is used
-		config = PipelinesConfig(CLIENT_CONFIG_PATH)
+		config = PipelineConfig(CLIENT_CONFIG_PATH)
 		user = os.environ["USER"]
 
 		if args.schedulerOperation == "stop":
-			PipelineSchedulerUtils.stopScheduler()
+			PipelineScheduler.stopScheduler()
 		elif args.schedulerOperation == "start":
-			PipelineSchedulerUtils.startScheduler(config, user)
+			PipelineScheduler.startScheduler(config, user)
 		else:
 			print "ERROR: unrecognized option {o}".format(o=args.startOrStop)
 			exit(-1)
@@ -307,7 +307,7 @@ if __name__ == "__main__":
 			print resp.get("msg")
 
 				# TODO: move code below to another location
-				#config = PipelinesConfig(CLIENT_CONFIG_PATH)
+				#config = PipelineConfig(CLIENT_CONFIG_PATH)
 				#section, option = args.parameter.split('/')
 				#try:
 				#	config.update(section, option, value)

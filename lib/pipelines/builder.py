@@ -1,12 +1,18 @@
 import json
-from jsonspec.validators import load  # jsonspec is licensed under BSD
-from pipelines.db import PipelineDbUtils
-from pipelines.queue import PipelineQueueUtils
+from jsonspec.validators import load, ValidationError  # jsonspec is licensed under BSD
+from pipelines.db import PipelineDatabase, PipelineDatabaseError
+from pipelines.queue import PipelineQueue, PipelineQueueError
 
 
-class PipelineSchemaValidationError:  # TODO: implement
-	def __init__(self):
-		pass
+class PipelineSchemaValidationError(Exception):  # TODO: implement
+	def __init__(self, msg):
+		super(PipelineSchemaValidationError, self).__init__()
+		self.msg = msg
+
+class PipelineSubmitError(Exception):
+	def __init__(self, msg):
+		super(PipelineSubmitError, self).__init__()
+		self.msg = msg
 
 
 class PipelineBuilder(object):
@@ -15,8 +21,8 @@ class PipelineBuilder(object):
 		self._schema = {}
 		self._config = config
 		self._dependencyMap = {}
-		self._pipelineDbUtils = PipelineDbUtils(self._config)
-		self._pipelineQueueUtils = PipelineQueueUtils('WAIT_Q')
+		self._pipelineDatabase = PipelineDatabase(self._config)
+		self._pipelineQueue = PipelineQueue('WAIT_Q')
 
 	def addStep(self, root):  # root must be an instance of PipelineSchema
 		if self.hasStep(root.name):
@@ -51,23 +57,20 @@ class PipelineBuilder(object):
 		try:
 			jobs = self._schema["pipelines"]
 		except KeyError as e:
-			print "There was a problem getting the list of pipelines from the specification"
-			exit(-1)
+			raise PipelineSchemaValidationError("There was a problem getting the list of pipelines from the specification: {reason}".format(reason=e))
 
 		jobNames = []
 		for job in jobs:
 			jobNames.append(job["name"])
 
 		if len(jobNames) != len(set(jobNames)):
-			print "ERROR: pipeline names must be unique"
-			exit(-1)
+			raise PipelineSchemaValidationError("Pipeline names must be unique")
 
 		for job in jobs:
 			if "children" in job.keys() and "parents" not in job.keys():
 				for child in job["children"]:
 					if child not in jobNames:
-						print "ERROR: job '{jobName}' specifies a child that doesn't exist".format(jobName=job["name"])
-						exit(-1)
+						raise PipelineSchemaValidationError("job '{jobName}' specifies a child that doesn't exist".format(jobName=job["name"]))
 
 		pipelineSchema = {
 			"description": "Pipeline Graph Schema",
@@ -113,29 +116,43 @@ class PipelineBuilder(object):
 		validator.validate(self._schema)
 		try:
 			validator.validate(self._schema)
-		except:  # what kind of exception?
-			exit(-1)
+		except ValidationError as e:  # what kind of exception?
+			raise PipelineSchemaValidationError("Couldn't validate the pipeline schema: {reason}".format(reason=e))
 
 	def _submitSchema(self):
 		jobIdMap = {}
 
 		for p in self._schema["pipelines"]:  # Add all jobs to the jobs table
-			jobIdMap[p["name"]] = self._pipelineDbUtils.insertJob(None, None, p["name"], p["tag"], None, 0,
+			try:
+				jobIdMap[p["name"]] = self._pipelineDatabase.insertJob(None, None, p["name"], p["tag"], None, 0,
 			                                                      p["request"]["pipelineArgs"]["logging"]["gcsPath"],
 			                                                      None, None, None, None, None,
 			                                                      json.dumps(p["request"]))
+			except PipelineDatabaseError as e:
+				raise PipelineSubmitError("Couldn't create pipeline database record: {reason}".format(reason=e))
 
 		for p in self._schema["pipelines"]:  # Add dependency info to the job dependency table
 			if "children" in p.keys() and len(p["children"]) > 0:
 				for c in p["children"]:
 					parentId = jobIdMap[p["name"]]
 					childId = jobIdMap[c]
-					self._pipelineDbUtils.insertJobDependency(parentId, childId)
+
+					try:
+						self._pipelineDatabase.insertJobDependency(parentId, childId)
+					except PipelineDatabaseError as e:
+						raise PipelineSubmitError("Couldn't update job dependencies: {reason}".format(reason=e))
 
 		for p in self._schema["pipelines"]:  # schedule pipelines
-			parents = self._pipelineDbUtils.getParentJobs(jobIdMap[p["name"]])
-			self._pipelineDbUtils.updateJob(jobIdMap[p["name"]], setValues={"current_status": "WAITING"},
+			try:
+				parents = self._pipelineDatabase.getParentJobs(jobIdMap[p["name"]])
+			except PipelineDatabaseError as e:
+				raise PipelineSubmitError("Couldn't get job dependency list: {reason}".format(reason=e))
+
+			try:
+				self._pipelineDatabase.updateJob(jobIdMap[p["name"]], setValues={"current_status": "WAITING"},
 			                                keyName="job_id")
+			except PipelineDatabaseError as e:
+				raise PipelineSubmitError("Couldn't update job dependencies: {reason}".format(reason=e))
 
 			# if the job is a root job, send the job request to the queue
 			msg = {
@@ -144,4 +161,7 @@ class PipelineBuilder(object):
 			}
 
 			if len(parents) == 0:
-				self._pipelineQueueUtils.publish(json.dumps(msg))
+				try:
+					self._pipelineQueue.publish(json.dumps(msg))
+				except PipelineQueueError as e:
+					raise PipelineSubmitError("Couldn't submit job to queue: {reason}".format(reason=e))

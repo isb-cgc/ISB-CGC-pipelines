@@ -5,7 +5,7 @@ import uuid
 class PipelineSchema(object):
 	def __init__(self, name, config, logsPath, imageName, scriptUrl=None, cmd=None, cores=1, mem=1, diskSize=None,
 	             diskType=None, env=None, inputs=None, outputs=None, tag=None, children=None, metadata=None,
-	             preemptible=False):  # config must be an instance of pipelines.utils.PipelinesConfig
+	             preemptible=False):  # config must be an instance of pipelines.config.PipelineConfig
 		self.name = name
 
 		if tag is None:

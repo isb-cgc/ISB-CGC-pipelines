@@ -1,0 +1,22 @@
+{
+    "cluster": {
+        "name": "{{ clusterName }}",
+        "zone": "{{ zone }}",
+        "initialNodeCount": "{{ nodeNum }}",
+        "network": "{{ network }}",
+        "nodeConfig": {
+            "machineType": "{{machineType}}",
+            "diskSizeGb": "{{ clusterNodeDiskSize }}",
+            "oauthScopes": [
+                "https://www.googleapis.com/auth/compute",
+                "https://www.googleapis.com/auth/devstorage.read_write",
+                "https://www.googleapis.com/auth/logging.write",
+                "https://www.googleapis.com/auth/cloud-platform"
+            ]
+        },
+        "masterAuth": {
+            "username": "admin",
+            "password": "{{ password }}"
+        }
+    }
+}

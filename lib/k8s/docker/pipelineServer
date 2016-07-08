@@ -3,13 +3,19 @@ import os
 import re
 import json
 import webapp2
+
 from StringIO import StringIO
 from paste import httpserver
 from pipelines.routes import *
-from pipelines.utils import PipelineSchema, PipelineBuilder, PipelinesConfig, PipelineDbUtils, PipelineServiceUtils, PipelineSchedulerUtils
+from pipelines.schema import PipelineSchema
+from pipelines.builder import PipelineBuilder
+from pipelines.config import PipelineConfig
+from pipelines.db import PipelineDatabase
+from pipelines.service import PipelineService
+from pipelines.scheduler import PipelineScheduler
 
 
-CONFIG = PipelinesConfig(path=os.environ["PIPELINES_CONFIG"])
+CONFIG = PipelineConfig(path=os.environ["PIPELINES_CONFIG"])
 
 
 class Jobs(webapp2.RequestHandler):
@@ -24,7 +30,7 @@ class Jobs(webapp2.RequestHandler):
 			kwargs["limit"] = self.request.get("limit")
 
 			try:
-				jobsList = PipelineSchedulerUtils.getJobsList(CONFIG, **kwargs)
+				jobsList = PipelineScheduler.getJobsList(CONFIG, **kwargs)
 
 			except ValueError as e:
 				self.response.set_status(400, e)
@@ -49,7 +55,7 @@ class Jobs(webapp2.RequestHandler):
 		if re.match(JOBS_LIST_CREATE_EXP, self.request.path):
 			# submits a job
 			try:
-				PipelineSchedulerUtils.submitPipeline(CONFIG, **kwargs)
+				PipelineScheduler.submitPipeline(CONFIG, **kwargs)
 			except:  # TODO: better exception handling in the utility classes
 				self.response.set_status(400)
 
@@ -58,15 +64,15 @@ class Jobs(webapp2.RequestHandler):
 
 		elif re.match(JOB_EDIT_EXP, self.request.path):
 			# edit job values given by **kwargs
-			PipelineSchedulerUtils.editPipeline(CONFIG, **kwargs)
+			PipelineScheduler.editPipeline(CONFIG, **kwargs)
 
 		elif re.match(JOB_RESTART_EXP, self.request.path):
 			# restart a job
-			PipelineSchedulerUtils.restartJobs(CONFIG, **kwargs)
+			PipelineScheduler.restartJobs(CONFIG, **kwargs)
 
 		elif re.match(JOB_CANCEL_EXP, self.request.path):
 			# stop/cancel a job
-			PipelineSchedulerUtils.stopPipeline(CONFIG, **kwargs)
+			PipelineScheduler.stopPipeline(CONFIG, **kwargs)
 
 		else:
 			self.response.set_status(404, "Resource {r} not found".format(r=self.request.path))

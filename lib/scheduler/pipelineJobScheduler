@@ -2,13 +2,14 @@
 import os
 import json
 import httplib2
-import argparse
 import threading
-from time import sleep
+
 from apiclient.discovery import build
 from googleapiclient.errors import HttpError
 from oauth2client.client import GoogleCredentials
-from pipelines.utils import PipelinesConfig, PipelineSchedulerUtils, PipelineDbUtils, PipelineQueueUtils
+from pipelines.config import PipelineConfig
+from pipelines.db import PipelineDatabase
+from pipelines.queue import PipelineQueue
 
 # NOTE: this process should be started up as part of the scheduling system (managed by Supervisor)
 
@@ -22,12 +23,12 @@ def main(config):
 	compute = build('compute', 'v1', http=http)
 	genomics = build('genomics', 'v1alpha2', http=http)
 
-	pipelineDbUtils = PipelineDbUtils(config)
-	pipelineQueueUtils = PipelineQueueUtils('WAIT_Q')
+	pipelineDatabase = PipelineDatabase(config)
+	pipelineQueue = PipelineQueue('WAIT_Q')
 
 	while True:
 		# consume a request
-		body, method = pipelineQueueUtils.get()
+		body, method = pipelineQueue.get()
 
 		if method:
 			body = json.loads(body)
@@ -65,7 +66,7 @@ def main(config):
 							ssdTotal += q["limit"]
 							ssdUsage += q["usage"]
 
-				currentlyRunning = len(pipelineDbUtils.getJobInfo(select=["job_id"], where={"current_status": "RUNNING"}))
+				currentlyRunning = len(pipelineDatabase.getJobInfo(select=["job_id"], where={"current_status": "RUNNING"}))
 				maxJobsTest = config.max_running_jobs - (currentlyRunning + 1)
 				cpuTest = cpuTotal - (cpuUsage + body["pipelineArgs"]["resources"]["minimumCpuCores"])
 				hddTest = hddTotal - (hddUsage + 10)  # each job uses at least 10GB of HDD by default
@@ -77,33 +78,29 @@ def main(config):
 					elif d["type"] == "PERSISTENT_HDD":
 						hddTest -= d["sizeGb"]
 
-			jobInfo = pipelineDbUtils.getJobInfo(select=["current_status"], where={"job_id": body["job_id"]})[0]
+			jobInfo = pipelineDatabase.getJobInfo(select=["current_status"], where={"job_id": body["job_id"]})[0]
 
 			if jobInfo.current_status != "CANCELLED":
 				try:
 					run = genomics.pipelines().run(body=body["request"]).execute()
 				except HttpError as e:
-					jobInfo = pipelineDbUtils.getJobInfo(select=["pipeline_name", "tag"], where={"job_id": body["job_id"]})
-					PipelineSchedulerUtils.writeStderr(
+					jobInfo = pipelineDatabase.getJobInfo(select=["pipeline_name", "tag"], where={"job_id": body["job_id"]})
+					PipelineLogger.writeStderr(
 						"ERROR: couldn't start job {pipeline}-{tag} : {reason}".format(pipeline=jobInfo[0].pipeline_name, tag=jobInfo[0].tag, reason=e))
-					pipelineDbUtils.updateJob(body["job_id"], keyName="job_id", setValues={"current_status": "ERROR"})
+					pipelineDatabase.updateJob(body["job_id"], keyName="job_id", setValues={"current_status": "ERROR"})
 
 				else:
 					operationId = run["name"].split("/")[-1]
-					PipelineSchedulerUtils.writeStdout("Operation submitted: {op}".format(op=operationId))
-					pipelineDbUtils.updateJob(body["job_id"], keyName="job_id", setValues={"current_status": "RUNNING", "operation_id": operationId, "stdout_log": "{op}-stdout.log".format(op=operationId), "stderr_log": "{op}-stderr.log".format(op=operationId), "create_time": run["metadata"]["createTime"], "end_time": None, "processing_time": None})
+					PipelineLogger.writeStdout("Operation submitted: {op}".format(op=operationId))
+					pipelineDatabase.updateJob(body["job_id"], keyName="job_id", setValues={"current_status": "RUNNING", "operation_id": operationId, "stdout_log": "{op}-stdout.log".format(op=operationId), "stderr_log": "{op}-stderr.log".format(op=operationId), "create_time": run["metadata"]["createTime"], "end_time": None, "processing_time": None})
 
-			pipelineQueueUtils.acknowledge(method)
+			pipelineQueue.acknowledge(method)
 
 		else:
 			pass
 
 if __name__ == "__main__":
-	parser = argparse.ArgumentParser()
-	parser.add_argument("--config")
-
-	args = parser.parse_args()
-	config = PipelinesConfig(args.config)
+	config = PipelineConfig()
 
 	t = threading.Thread(target=config.watch)
 	t.daemon = True

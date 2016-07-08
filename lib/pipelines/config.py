@@ -1,20 +1,19 @@
 import os
 import pyinotify
 from ConfigParser import SafeConfigParser, NoOptionError, NoSectionError
-from pipelines.scheduler import PipelineSchedulerUtils
+from pipelines.scheduler import PipelineScheduler
+from pipelines.paths import *
 
 
-MODULE_PATH = "/usr/local/ISB-CGC-pipelines/lib"  # TODO: move path to configuration file
+class PipelineConfigError(Exception):  # TODO: implement
+	def __init__(self, msg):
+		super(PipelineConfigError, self).__init__()
+		self.msg = msg
 
 
-class PipelinesConfigError:  # TODO: implement
-	def __init__(self):
-		pass
-
-
-class PipelinesConfig(SafeConfigParser, object):
-	def __init__(self, path, first_time=False):
-		super(PipelinesConfig, self).__init__()
+class PipelineConfig(SafeConfigParser, object):
+	def __init__(self, path=SERVER_CONFIG_PATH, first_time=False):
+		super(PipelineConfig, self).__init__()
 
 		self.path = path
 
@@ -90,10 +89,10 @@ class PipelinesConfig(SafeConfigParser, object):
 
 	def update(self, section, option, value, first_time=False):
 		if option not in self._configParams.keys():
-			raise ValueError("unrecognized option {s}/{o}".format(s=section, o=option))
+			raise PipelineConfigError("unrecognized option {s}/{o}".format(s=section, o=option))
 		else:
 			if self._configParams[option]["section"] != section:
-				raise ValueError("unrecognized section {s}".format(s=section))
+				raise PipelineConfigError("unrecognized section {s}".format(s=section))
 
 		if not self.has_section(section):
 			self.add_section(section)
@@ -110,7 +109,7 @@ class PipelinesConfig(SafeConfigParser, object):
 		# watch changes to the config file -- needs to be run in a separate thread
 		configStatusManager = pyinotify.WatchManager()
 		configStatusNotifier = pyinotify.Notifier(configStatusManager)
-		configStatusManager.add_watch(self.path, pyinotify.IN_CLOSE_WRITE, proc_fun=PipelinesConfigUpdateHandler(config=self))
+		configStatusManager.add_watch(self.path, pyinotify.IN_CLOSE_WRITE, proc_fun=PipelineConfigUpdateHandler(config=self))
 		configStatusNotifier.loop()
 
 	def refresh(self):
@@ -120,17 +119,17 @@ class PipelinesConfig(SafeConfigParser, object):
 		try:
 			self.read(self.path)
 		except IOError as e:
-			print "Couldn't open {path}: {reason}".format(path=self.path, reason=e)
-			exit(-1)
+			raise PipelineConfigError("Couldn't open {path}: {reason}".format(path=self.path, reason=e))
+
 		else:
 			d = {}
 			for name, attrs in self._configParams.iteritems():
 				if attrs["required"]:
 					if not self.has_section(attrs["section"]):
-						raise LookupError("missing required section {s} in the configuration!\nRUN `isb-cgc-pipelines config` to correct the configuration".format(s=attrs["section"]))
+						raise PipelineConfigError("missing required section {s} in the configuration!\nRUN `isb-cgc-pipelines config` to correct the configuration".format(s=attrs["section"]))
 
 					if not self.has_option(attrs["section"], name):
-						raise LookupError("missing required option {o} in section {s}!\nRun `isb-cgc-pipelines config` to correct the configuration".format(s=attrs["section"], o=name))
+						raise PipelineConfigError("missing required option {o} in section {s}!\nRun `isb-cgc-pipelines config` to correct the configuration".format(s=attrs["section"], o=name))
 
 				try:
 					d[name] = self.get(attrs["section"], name)
@@ -143,10 +142,10 @@ class PipelinesConfig(SafeConfigParser, object):
 			return d
 
 
-class PipelinesConfigUpdateHandler(pyinotify.ProcessEvent):
-	def my_init(self, config=None):  # config -> PipelinesConfig
+class PipelineConfigUpdateHandler(pyinotify.ProcessEvent):
+	def my_init(self, config=None):  # config -> PipelineConfig
 		self._config = config
 
 	def process_IN_CLOSE_WRITE(self, event):
-		PipelineSchedulerUtils.writeStdout("Refreshing configuration ...")
+		PipelineLogger.writeStdout("Refreshing configuration ...")
 		self._config.refresh()
