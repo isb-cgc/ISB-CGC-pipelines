@@ -1,10 +1,10 @@
 import os
+import re
 import json
 import string
 import requests
 import subprocess
 import futures
-import functools
 from time import time, sleep
 from random import SystemRandom
 from datetime import datetime
@@ -141,17 +141,24 @@ class PipelineService:
 	def watchJob(jobId, exchangeName):
 		queue = PipelineQueue('PIPELINE_JOB_{j}'.format(j=jobId))
 		queue.bindToExchange(exchangeName, jobId)
-		body, method = queue.get()
 
-		if method:
-			body = json.loads(body)
+		diskName = None
 
-			if body["current_status"] == "SUCCEEDED":
-				pass
+		while True:
+			body, method = queue.get()
+
+			if method:
+				body = json.loads(body)
+
+				if body["current_status"] == "SUCCEEDED":
+					pass  # TODO: get the name of the disk
+				else:
+					raise PipelineServiceError("Job {j} has current status {s}!".format(j=jobId, s=body["current_status"]))
 			else:
-				raise PipelineServiceError("Job {j} has current status {s}!".format(j=jobId, s=body["current_status"]))
-		else:
-			pass
+				pass
+
+		return diskName
+
 
 	@staticmethod
 	def bootstrapServiceCluster(gke, credentials, http, projectId, zone, clusterName, machineType, nodes, nodeDiskSize, nodeDiskType):
@@ -319,86 +326,94 @@ class PipelineService:
 		ensureCluster()
 		configureClusterAccess()
 
+		serviceUrl = API_ROOT + SERVICES_URI.format(namespace=namespaceSpec["metadata"]["name"])
+		rcUrl = API_ROOT + REPLICATION_CONTROLLERS_URI.format(namespace=namespaceSpec["metadata"]["name"])
+		volumeUrl = API_ROOT + PERSISTENT_VOLUMES_URI.format(namespace=namespaceSpec["metadata"]["name"])
+
 		# pipeline front-end service
 		path = os.path.join(TEMPLATES_PATH, "pipeline-frontend-service.json.jinja2")
 		with open(path) as f:
 			pipelineFrontendServiceSpec = prepareTemplate(f)  # TODO: kwargs
 
-		url = API_ROOT + SERVICES_URI.format(namespace=namespaceSpec["metadata"]["name"])
-		createResource(url, API_HEADERS, pipelineFrontendServiceSpec)
+		createResource(serviceUrl, API_HEADERS, pipelineFrontendServiceSpec)
 
 		# sqlite-reader-service
 		with open(os.path.join(TEMPLATES_PATH, "sqlite-reader-service.json.jinja2")) as f:
 			sqliteReaderServiceSpec = prepareTemplate(f)  # TODO: kwargs
 
-		createResource(url, API_HEADERS, sqliteReaderServiceSpec)
+		createResource(serviceUrl, API_HEADERS, sqliteReaderServiceSpec)
 
 		# sqlite-writer-service
 		with open(os.path.join(TEMPLATES_PATH, "sqlite-writer-service.json.jinja2")) as f:
 			sqliteWriterServiceSpec = prepareTemplate(f)  # TODO: kwargs
 
-		createResource(url, API_HEADERS, sqliteWriterServiceSpec)
+		createResource(serviceUrl, API_HEADERS, sqliteWriterServiceSpec)
 
 		# rabbitmq service
 		with open(os.path.join(TEMPLATES_PATH, "rabbitmq-service.json.jinja2")) as f:
 			rabbitmqServiceSpec = prepareTemplate(f)  # TODO: kwargs
 
-		createResource(url, API_HEADERS, rabbitmqServiceSpec)
+		createResource(serviceUrl, API_HEADERS, rabbitmqServiceSpec)
 
 		# pipeline front-end rc
 		with open(os.path.join(TEMPLATES_PATH, "pipeline-frontend-rc.json.jinja2")) as f:
 			pipelineFrontendRcSpec = prepareTemplate(f)  # TODO: kwargs
 
-		url = API_ROOT + REPLICATION_CONTROLLERS_URI.format(namespace=namespaceSpec["metadata"]["name"])
-		createResource(url, API_HEADERS, pipelineFrontendRcSpec)
+		createResource(rcUrl, API_HEADERS, pipelineFrontendRcSpec)
 
 		# rabbitmq rc
 		with open(os.path.join(TEMPLATES_PATH, "rabbitmq-rc.json.jinja2")) as f:
 			rabbitmqRcSpec = prepareTemplate(f)  # TODO: kwargs
 
-		createResource(url, API_HEADERS, rabbitmqRcSpec)
+		createResource(rcUrl, API_HEADERS, rabbitmqRcSpec)
+
+		# temporary (hostpath) sqlite volume
+		with open(os.path.join(TEMPLATES_PATH, "temporary-sqlite-volume.json.jinja2")) as f:
+			temporarySqliteVolume = prepareTemplate(f)  # TODO: kwargs
+
+		# temporary (hostpath) config volume
+		with open(os.path.join(TEMPLATES_PATH, "temporary-sqlite-volume.json.jinja2")) as f:
+			temporarySqliteVolume = prepareTemplate(f)  # TODO: kwargs
+
+		# temporary sqlite-reader-rc
+		with open(os.path.join(TEMPLATES_PATH, "temporary-sqlite-reader-rc.json.jinja2")) as f:
+			temporarySqliteReaderRcSpec = prepareTemplate(f)  # TODO: kwargs
+
+		createResource(rcUrl, API_HEADERS, temporarySqliteReaderRcSpec)
+
+		# temporary sqlite-writer-rc
+		with open(os.path.join(TEMPLATES_PATH, "temporary-sqlite-writer-rc.json.jinja2")) as f:
+			temporarySqliteWriterRcSpec = prepareTemplate(f)  # TODO: kwargs
+
+		createResource(rcUrl, API_HEADERS, temporarySqliteWriterRcSpec)
+
+		# temporary config-writer-rc
+		with open(os.path.join(TEMPLATES_PATH, "temporary-config-writer-rc.json.jinja2")) as f:
+			temporaryConfigWriterRcSpec = prepareTemplate(f)  # TODO: kwargs
+
+		createResource(rcUrl, API_HEADERS, temporaryConfigWriterRcSpec)
 
 		# pipeline log handler rc
 		with open(os.path.join(TEMPLATES_PATH, "pipeline-log-handler-rc.json.jinja2")) as f:
 			pipelineLogHandlerRcSpec = prepareTemplate(f)  # TODO: kwargs
 
-		createResource(url, API_HEADERS, pipelineLogHandlerRcSpec)
+		createResource(rcUrl, API_HEADERS, pipelineLogHandlerRcSpec)
 
 		# pipeline scheduler rc
 		with open(os.path.join(TEMPLATES_PATH, "pipeline-scheduler-rc.json.jinja2")) as f:
 			pipelineSchedulerRcSpec = prepareTemplate(f)  # TODO: kwargs
 
-		createResource(url, API_HEADERS, pipelineSchedulerRcSpec)
+		createResource(rcUrl, API_HEADERS, pipelineSchedulerRcSpec)
 
 		# pipeline canceller rc
 		with open(os.path.join(TEMPLATES_PATH, "pipeline-canceller-rc.json.jinja2")) as f:
 			pipelineCancellerRcSpec = prepareTemplate(f)  # TODO: kwargs
 
-		createResource(url, API_HEADERS, pipelineCancellerRcSpec)
+		createResource(rcUrl, API_HEADERS, pipelineCancellerRcSpec)
 
-		# create a sqlite and config disks
+		# TODO: port forward the rabbitmq service to a local port
 
-		# temporary (hostpath) sqlite volume
-
-		# temporary (hostpath) config volume
-
-		# temporary sqlite-reader-rc
-		with open(os.path.join(TEMPLATES_PATH, "sqlite-reader-rc.json.jinja2")) as f:
-			sqliteReaderRcSpec = prepareTemplate(f)  # TODO: kwargs
-
-		createResource(url, API_HEADERS, sqliteReaderRcSpec)
-
-		# temporary sqlite-writer-rc
-		with open(os.path.join(TEMPLATES_PATH, "sqlite-writer-rc.json.jinja2")) as f:
-			sqliteWriterRcSpec = prepareTemplate(f)  # TODO: kwargs
-
-		createResource(url, API_HEADERS, sqliteWriterRcSpec)
-
-		# set up a queue for watching the status of particular jobs
-		# port forward the rabbitmq service to a local port
-
-
-		# create the watch queue
+		# set up the watch
 		PipelineExchange('WATCH_EXCHANGE')
 
 		# run pipeline jobs for creating/populating the service disks
@@ -422,6 +437,8 @@ class PipelineService:
 		# set a watch on each job id and wait for the jobs to complete
 		error = 0
 		errors = []
+		diskNames = []
+
 		with futures.ThreadPoolExecutor(50) as p:
 			statuses = dict((p.submit(PipelineService.watchJob, j, 'WATCH_EXCHANGE') for j in jobIds))
 
@@ -430,7 +447,7 @@ class PipelineService:
 					errors.append("ERROR: Couldn't create disk volume: {reason}".format(reason=s.exception()))
 					error = 1
 				else:
-					pass
+					diskNames.append(s.result())
 
 		if error == 1:
 			for e in errors:
@@ -438,9 +455,11 @@ class PipelineService:
 
 			exit(-1)
 
-		# sqlite volume
-
-		# config volume
+		for d in diskNames:
+			if re.match('^sqlite.*', d):
+				pass  # TODO: create permanent sqlite volume
+			elif re.match('^config.*', d):
+				pass  # TODO: create permanent config volume
 
 		# restart the sqlite RCs with the newly created volumes
 

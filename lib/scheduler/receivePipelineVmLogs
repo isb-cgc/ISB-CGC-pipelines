@@ -13,7 +13,7 @@ from oauth2client import client as oauth2client
 
 from pipelines.config import PipelineConfig
 from pipelines.db import PipelineDatabase
-from pipelines.queue import PipelineQueue, PipelineChannel
+from pipelines.queue import PipelineQueue, PipelineChannel, PipelineQueueError
 from pipelines.logger import PipelineLogger
 
 PUBSUB_SCOPES = ['https://www.googleapis.com/auth/pubsub']
@@ -158,6 +158,7 @@ class PubsubMessageHandlers(object):
 								"current_status": "SUCCEEDED"
 							}
 							pipelineChannel.publishToExchange('WATCH_EXCHANGE', "PIPELINE_JOB_{j}".format(j=jobInfo[0].job_id), msg)
+
 						except PipelineQueueError as e:
 							pass
 
@@ -174,20 +175,40 @@ class PubsubMessageHandlers(object):
 									"current_status": "FAILED"
 								}
 								pipelineChannel.publishToExchange('WATCH_EXCHANGE', "PIPELINE_JOB_{j}".format(j=jobInfo[0].job_id), msg)
+
 							except PipelineQueueError as e:
 								pass
 
 		elif log["jsonPayload"]["event_subtype"] == "compute.instances.insert":
 			zone = log["resource"]["labels"]["zone"]
 			try:
-				operationId = compute.instances().get(project=config.project_id, zone=zone, instance=instance).execute()["description"].partition("Operation: ")[-1]
+				instanceInfo = compute.instances().get(project=config.project_id, zone=zone, instance=instance).execute()
 
 			except HttpError as e:
-				PipelineLogger.writeStderr("Couldn't get the operation id for instance {i} : {reason}".format(i=instance, reason=e))
+				PipelineLogger.writeStderr("Couldn't get info for instance {i} : {reason}".format(i=instance, reason=e))
 
 			else:
+				operationId = instanceInfo["description"].partition("Operation: ")[-1]
 				PipelineLogger.writeStdout("Instance {i} (operation {o}) started!".format(i=instance, o=operationId))
 				pipelineDatabase.updateJob(operationId, keyName="operation_id", setValues={"instance_name": instance})
+
+				try:
+					jobInfo = pipelineDatabase.getJobInfo(select=["operation_id", "current_status"],
+					                                      where={"instance_name": instance})[0]
+
+				except IndexError:
+					PipelineLogger.writeStderr(
+						"Instance {i} deleted, but no record exists in jobs database".format(i=instance))
+
+				else:
+					try:
+						msg = {
+							"current_status": "RUNNING"
+						}
+						pipelineChannel.publishToExchange('WATCH_EXCHANGE', "PIPELINE_JOB_{j}".format(j=jobInfo[0].job_id), msg)
+
+					except PipelineQueueError as e:
+						pass
 							
 
 def main(args, config):
