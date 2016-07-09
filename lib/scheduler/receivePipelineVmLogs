@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+import os
 import json
 import base64
 import httplib2
@@ -12,7 +13,7 @@ from oauth2client import client as oauth2client
 
 from pipelines.config import PipelineConfig
 from pipelines.db import PipelineDatabase
-from pipelines.queue import PipelineQueue
+from pipelines.queue import PipelineQueue, PipelineChannel
 from pipelines.logger import PipelineLogger
 
 PUBSUB_SCOPES = ['https://www.googleapis.com/auth/pubsub']
@@ -37,7 +38,8 @@ class PubsubMessageHandlers(object):
 			return processingTime
 
 		pipelineDatabase = PipelineDatabase(config)
-		pipelineQueue = PipelineQueue('WAIT_Q')
+		pipelineQueue = PipelineQueue('WAIT_Q', host=os.environ["RABBITMQ_SERVICE_HOST"], port=os.environ["RABBITMQ_SERVICE_PORT"])
+		pipelineChannel = PipelineChannel(host=os.environ["RABBITMQ_SERVICE_HOST"], port=os.environ["RABBITMQ_SERVICE_PORT"])
 
 		instance = log["jsonPayload"]["resource"]["name"]
 
@@ -71,11 +73,27 @@ class PubsubMessageHandlers(object):
 								"Couldn't start downstream jobs for job {j} ({pipeline}-{tag}) : status is PREEMPTED (autorestart is FALSE)".format(
 									j=jobInfo[0].job_id, pipeline=jobInfo[0].pipeline_name, tag=jobInfo[0].tag))
 
+						try:
+							msg = {
+								"current_status": "PREEMPTED"
+							}
+							pipelineChannel.publishToExchange('WATCH_EXCHANGE', "PIPELINE_JOB_{j}".format(j=jobInfo[0].job_id), msg)
+						except PipelineQueueError as e:
+							pass
+
 				else:
 					if len(children) > 0:
 						PipelineLogger.writeStderr(
 							"Couldn't start downstream jobs for job {j} ({pipeline}-{tag}) : status is CANCELLED".format(
 								j=jobInfo[0].job_id, pipeline=jobInfo[0].pipeline_name, tag=jobInfo[0].tag))
+
+					try:
+						msg = {
+							"current_status": "CANCELLED"
+						}
+						pipelineChannel.publishToExchange('WATCH_EXCHANGE', "PIPELINE_JOB_{j}".format(j=jobInfo[0].job_id), msg)
+					except PipelineQueueError as e:
+						pass
 
 		elif log["jsonPayload"]["event_subtype"] == "compute.instances.delete":
 			# update the status of the job in the jobs db
@@ -135,6 +153,14 @@ class PubsubMessageHandlers(object):
 							PipelineLogger.writeStdout(
 								"Job {jobid} has no child jobs to check!".format(jobid=jobInfo[0].job_id))
 
+						try:
+							msg = {
+								"current_status": "SUCCEEDED"
+							}
+							pipelineChannel.publishToExchange('WATCH_EXCHANGE', "PIPELINE_JOB_{j}".format(j=jobInfo[0].job_id), msg)
+						except PipelineQueueError as e:
+							pass
+
 					elif "error" in status.keys():
 						if jobInfo[0].current_status != "CANCELLED":
 							PipelineLogger.writeStdout("PIPELINE FAILED ({job}): {reason}".format(job="{pipeline}-{tag}".format(pipeline=jobInfo[0].pipeline_name, tag=jobInfo[0].tag), reason=status["error"]["message"]))
@@ -142,6 +168,14 @@ class PubsubMessageHandlers(object):
 							if len(children) > 0:
 								PipelineLogger.writeStderr("Couldn't start downstream jobs for job {j} ({pipeline}-{tag}) : status is FAILED".format(
 										j=jobInfo[0].job_id, pipeline=jobInfo[0].pipeline_name, tag=jobInfo[0].tag))
+
+							try:
+								msg = {
+									"current_status": "FAILED"
+								}
+								pipelineChannel.publishToExchange('WATCH_EXCHANGE', "PIPELINE_JOB_{j}".format(j=jobInfo[0].job_id), msg)
+							except PipelineQueueError as e:
+								pass
 
 		elif log["jsonPayload"]["event_subtype"] == "compute.instances.insert":
 			zone = log["resource"]["labels"]["zone"]

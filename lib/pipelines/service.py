@@ -1,14 +1,43 @@
 import os
 import json
-import subprocess
 import string
+import requests
+import subprocess
+import futures
+import functools
+from time import time, sleep
 from random import SystemRandom
 from datetime import datetime
 from jinja2 import Template
 from googleapiclient.errors import HttpError
 from pipelines.paths import *
+from pipelines.schema import PipelineSchema
+from pipelines.builder import PipelineBuilder, PipelineSchemaValidationError, PipelineSubmitError
 from pipelines.db import PipelineDatabase, PipelineDatabaseError
+from pipelines.queue import PipelineQueue, PipelineExchange
 from ConfigParser import SafeConfigParser
+
+
+# Kubernetes API URIs
+API_ROOT = "http://localhost:8080"
+NAMESPACE_URI = "/api/v1/namespaces/"
+PODS_URI = "/api/v1/namespaces/{namespace}/pods/"
+SERVICES_URI = "/api/v1/namespaces/{namespace}/services/"
+REPLICATION_CONTROLLERS_URI = "/api/v1/namespaces/{namespace}/replicationcontrollers/"
+PERSISTENT_VOLUMES_URI = "/api/v1/persistentvolumes/"
+PERSISTENT_VOLUME_CLAIMS_URI = "/api/v1/namespaces/{namespace}/persistentvolumeclaims/"
+SECRETS_URI = "/api/v1/namespaces/{namespace}/secrets/"
+
+SESSION = requests.Session()
+API_HEADERS = {
+	"Content-type": "application/json"
+}
+
+
+class PipelineServiceError(Exception):
+	def __init__(self, msg):
+		super(PipelineServiceError, self).__init__()
+		self.msg = msg
 
 
 class PipelineService:
@@ -109,21 +138,49 @@ class PipelineService:
 		print "Scheduler stopped successfully!"
 
 	@staticmethod
-	def bootstrapServiceCluster(gke, projectId, zone, clusterName, machineType, nodes, nodeDiskSize, nodeDiskType):
-		# TODO: need to pass in project_id, zone, cluster_name, node count,
-		def create_cluster_admin_password(self):
+	def watchJob(jobId, exchangeName):
+		queue = PipelineQueue('PIPELINE_JOB_{j}'.format(j=jobId))
+		queue.bindToExchange(exchangeName, jobId)
+		body, method = queue.get()
+
+		if method:
+			body = json.loads(body)
+
+			if body["current_status"] == "SUCCEEDED":
+				pass
+			else:
+				raise PipelineServiceError("Job {j} has current status {s}!".format(j=jobId, s=body["current_status"]))
+		else:
+			pass
+
+	@staticmethod
+	def bootstrapServiceCluster(gke, credentials, http, projectId, zone, clusterName, machineType, nodes, nodeDiskSize, nodeDiskType):
+
+		def refreshAccessToken():
+			if credentials.access_token_expired:
+				credentials.refresh(http)
+
+		def prepareTemplate(fp, **kwargs):
+			s = fp.read().replace('\n', '')
+			t = Template(s)
+			return json.loads(t.render(**kwargs))
+
+		def createResource(url, headers, resource):
+			response = SESSION.post(url, headers=headers, json=resource)
+
+			# if the response isn't what's expected, raise an exception
+			if response.status_code != 201:
+				if response.status_code == 409:  # already exists
+					pass
+				else:
+					print "ERROR: Namespace creation failed: {reason}".format(reason=response.status_code)
+					exit(-1)  # probably should raise an exception
+
+		def createClusterAdminPassword():
 			return ''.join(SystemRandom().choice(string.ascii_uppercase + string.ascii_lowercase + string.digits) for _ in range(16))
 
 		def clusterExists():
 			clusterExists = False
-
-			# load and render the cluster template for request
-			with open(os.path.join(TEMPLATES_PATH, "cluster.json.jinja2")) as f:
-				s = f.read().replace('\n', '')
-
-			t = Template(s)
-
-			clusterSpec = json.loads(t.render(projectId=projectId, zone=zone, clusterName=clusterName, nodes=nodes, nodeDiskSize=nodeDiskSize, nodeDiskType=nodeDiskType))
 
 			try:
 				response = gke.projects().zones().clusters().get(projectId=projectId, zone=zone, clusterId=clusterName).execute()
@@ -139,86 +196,77 @@ class PipelineService:
 							str(response["nodeConfig"]["diskSizeGb"]) == str(nodeDiskSize) and \
 							str(response["nodeConfig"]["machineType"]) == str(machineType):
 
+						clusterExists = True
 
-						# TODO: set cluster endpoint in the client configuration
-
-						cluster_exists = True
 				except KeyError:
 					pass
 
 			return clusterExists
 
-		# TODO: start here
-		def ensureCluster(self, filestore):
+		def ensureCluster():
 			# create a cluster to run the workflow on if it doesn't exist already
-			if not self.cluster_exists(filestore):
-				filestore.logToMaster("{timestamp}  Creating cluster ... ".format(timestamp=self.create_timestamp()))
-				create_cluster = GKE.projects().zones().clusters().create(projectId=self.project_id, zone=self.zone,
-				                                                          body=self.cluster_spec).execute(http=HTTP)
+			if not clusterExists():
+				print "Creating cluster {cluster} ...".format(cluster=clusterName)
+				createCluster = gke.projects().zones().clusters().create(projectId=projectId, zone=zone, body=clusterSpec).execute()
 
 				# wait for the operation to complete
 				while True:
-					response = GKE.projects().zones().operations().get(projectId=self.project_id, zone=self.zone,
-					                                                   operationId=create_cluster["name"]).execute(
-						http=HTTP)
+					response = gke.projects().zones().operations().get(projectId=projectId, zone=zone, operationId=createCluster["name"]).execute()
 
 					if response['status'] == 'DONE':
 						break
 					else:
-						time.sleep(1)
+						sleep(1)
 
-		def configureClusterAccess(self, filestore):
+		def configureClusterAccess():
 			# configure cluster access (may want to perform checks before doing this)
-			filestore.logToMaster("{timestamp}  Configuring access to cluster {cluster_name} ...".format(
-				timestamp=self.create_timestamp(), cluster_name=self.workflow_name))
+			print "Configuring access to cluster {cluster} ...".format(cluster=clusterName)
 
 			# configure ssh keys
 			try:
-				subprocess.check_call(
-					["bash", "-c", "stat ~/.ssh/google_compute_engine && stat ~/.ssh/google_compute_engine.pub"])
+				subprocess.check_call(["bash", "-c", "stat ~/.ssh/google_compute_engine && stat ~/.ssh/google_compute_engine.pub"])
 			except subprocess.CalledProcessError as e:
 				try:
 					subprocess.check_call(["gcloud", "compute", "config-ssh"])
 				except subprocess.CalledProcessError as e:
-					filestore.logToMaster("Couldn't generate SSH keys for the workstation: {e}".format(e=e))
+					print "ERROR: Couldn't generate SSH keys for the workstation: {e}".format(e=e)
 					exit(-1)
 
 			try:
-				subprocess.check_call(["gcloud", "config", "set", "compute/zone", self.zone])
+				subprocess.check_call(["gcloud", "config", "set", "compute/zone", zone])
 			except subprocess.CalledProcessError as e:
-				filestore.logToMaster("Couldn't set the compute zone: {reason}".format(reason=e))
+				print "ERROR: Couldn't set the compute zone: {reason}".format(reason=e)
 				exit(-1)
+
 			try:
-				subprocess.check_call(["kubectl", "config", "set", "cluster", self.workflow_name])
+				subprocess.check_call(["kubectl", "config", "set", "cluster", clusterName])
 			except subprocess.CalledProcessError as e:
-				filestore.logToMaster("Couldn't set cluster in configuration: {reason}".format(reason=e))
+				print "ERROR: Couldn't set cluster in configuration: {reason}".format(reason=e)
 				exit(-1)  # raise an exception
 
 			try:
-				subprocess.check_call(["gcloud", "container", "clusters", "get-credentials", self.workflow_name])
+				subprocess.check_call(["gcloud", "container", "clusters", "get-credentials", clusterName])
 			except subprocess.CalledProcessError as e:
-				filestore.logToMaster("Couldn't get cluster credentials: {reason}".format(reason=e))
+				print "ERROR: Couldn't get cluster credentials: {reason}".format(reason=e)
 				exit(-1)  # raise an exception
 
 			# get the cluster hosts for reference
 			try:
-				instance_group_name = subprocess.check_output(
-					["gcloud", "compute", "instance-groups", "list", "--regexp",
-					 "^gke-{workflow}-.*-group$".format(workflow=self.workflow_name)]).split('\n')[1].split(' ')[0]
-				instance_list = subprocess.check_output(
-					["gcloud", "compute", "instance-groups", "list-instances", instance_group_name]).split('\n')[1:-1]
-				for instance in instance_list:
-					self.cluster_hosts.append(instance.split(' ')[0])
+				instanceGroupName = subprocess.check_output(["gcloud", "compute", "instance-groups", "list", "--regexp", "^gke-{cluster}-.*-group$".format(cluster=clusterName)]).split('\n')[1].split(' ')[0]
+				instanceList = subprocess.check_output(["gcloud", "compute", "instance-groups", "list-instances", instanceGroupName]).split('\n')[1:-1]
+				for instance in instanceList:
+					pass  # TODO: set cluster hosts in client configuration
 
 			except subprocess.CalledProcessError as e:
-				filestore.logToMaster("Couldn't get cluster hostnames: {reason}".format(reason=e))
+				print "ERROR: Couldn't get cluster hostnames: {reason}".format(reason=e)
 				exit(-1)  # raise an exception
 
 			# run kubectl in proxy mode in a background process
 			try:
-				subprocess.Popen(["kubectl", "proxy", "--port", "8080"])
+				subprocess.Popen(["kubectl", "proxy", "--port", "8080"])  # TODO: document the in-use ports, and/or figure out how to "detect" them (manage in configuration?)
 			except ValueError as e:
-				exit(-1)  # raise an exception
+				print "ERROR: couldn't set up kubectl proxy: {reason}".format(reason=e)
+				exit(-1)
 
 			# make sure the proxy is running -- something is going wrong here that I can't figure out.
 			timeout = 180
@@ -232,42 +280,172 @@ class PipelineService:
 					break
 
 				if timeout <= 0:
-					filestore.logToMaster(
-						"Couldn't access proxy (timeout reached): {status}".format(status=response.content))
+					print "ERROR: Couldn't access proxy (timeout reached): {status}".format(status=response.content)
 					exit(-1)
 				else:
-					time.sleep(1)
+					sleep(1)
 					timeout -= 1
 
 			# create a namespace for the workflow
-			full_url = API_ROOT + NAMESPACE_URI
-			response = SESSION.post(full_url, headers=self.headers, json=self.namespace_spec)
-
-			# if the response isn't what's expected, raise an exception
-			if response.status_code != 201:
-				if response.status_code == 409:  # already exists
-					pass
-				else:
-					filestore.logToMaster("Namespace creation failed: {reason}".format(reason=response.status_code))
-					exit(-1)  # probably should raise an exception
+			url = API_ROOT + NAMESPACE_URI
+			createResource(url, API_HEADERS, namespaceSpec)
 
 			# set the namespace for the current context if it doesn't exist already
-			kubectl_config = subprocess.Popen(["kubectl", "config", "view"], stdout=subprocess.PIPE)
-			grep = subprocess.Popen(["grep", "current-context"], stdout=subprocess.PIPE, stdin=kubectl_config.stdout,
-			                        stderr=subprocess.STDOUT)
+			kubectlContext = subprocess.Popen(["kubectl", "config", "current-context"], stdout=subprocess.PIPE)
 
-			kubectl_context_string = grep.communicate()
-			kube_context = kubectl_context_string[0].split(' ')[1].strip()
 			try:
-				subprocess.check_call(
-					["kubectl", "config", "set", "contexts.{context}.namespace".format(context=kube_context),
-					 self.namespace_spec["metadata"]["name"]])
+				subprocess.check_call(["kubectl", "config", "set", "contexts.{context}.namespace".format(context=kubectlContext), namespaceSpec["metadata"]["name"]])
 			except subprocess.CalledProcessError as e:
-				filestore.logToMaster("Couldn't set cluster context: {reason}".format(reason=e))
+				print "ERROR: Couldn't set cluster context: {reason}".format(reason=e)
 				exit(-1)  # raise an exception
 
-			filestore.logToMaster(
-				"{timestamp}  Cluster configuration was successful!".format(timestamp=self.create_timestamp()))
+			print "Cluster configuration was successful!"
+
+		# authentication
+		refreshAccessToken()
+		API_HEADERS.update({"Authorization": "Bearer {token}".format(token=credentials.access_token)})
+
+		# load/render/submit the request templates
+
+		# cluster template
+		with open(os.path.join(TEMPLATES_PATH, "cluster.json.jinja2")) as f:
+			clusterSpec = prepareTemplate(f, projectId=projectId, zone=zone, clusterName=clusterName, nodes=nodes, nodeDiskSize=nodeDiskSize, nodeDiskType=nodeDiskType)
+
+		# namespace template
+		with open(os.path.join(TEMPLATES_PATH, "namespaces.json.jinja2")) as f:
+			namespaceSpec = prepareTemplate(f, name=clusterName)
+
+		# create and configure cluster
+		ensureCluster()
+		configureClusterAccess()
+
+		# pipeline front-end service
+		path = os.path.join(TEMPLATES_PATH, "pipeline-frontend-service.json.jinja2")
+		with open(path) as f:
+			pipelineFrontendServiceSpec = prepareTemplate(f)  # TODO: kwargs
+
+		url = API_ROOT + SERVICES_URI.format(namespace=namespaceSpec["metadata"]["name"])
+		createResource(url, API_HEADERS, pipelineFrontendServiceSpec)
+
+		# sqlite-reader-service
+		with open(os.path.join(TEMPLATES_PATH, "sqlite-reader-service.json.jinja2")) as f:
+			sqliteReaderServiceSpec = prepareTemplate(f)  # TODO: kwargs
+
+		createResource(url, API_HEADERS, sqliteReaderServiceSpec)
+
+		# sqlite-writer-service
+		with open(os.path.join(TEMPLATES_PATH, "sqlite-writer-service.json.jinja2")) as f:
+			sqliteWriterServiceSpec = prepareTemplate(f)  # TODO: kwargs
+
+		createResource(url, API_HEADERS, sqliteWriterServiceSpec)
+
+		# rabbitmq service
+		with open(os.path.join(TEMPLATES_PATH, "rabbitmq-service.json.jinja2")) as f:
+			rabbitmqServiceSpec = prepareTemplate(f)  # TODO: kwargs
+
+		createResource(url, API_HEADERS, rabbitmqServiceSpec)
+
+		# pipeline front-end rc
+		with open(os.path.join(TEMPLATES_PATH, "pipeline-frontend-rc.json.jinja2")) as f:
+			pipelineFrontendRcSpec = prepareTemplate(f)  # TODO: kwargs
+
+		url = API_ROOT + REPLICATION_CONTROLLERS_URI.format(namespace=namespaceSpec["metadata"]["name"])
+		createResource(url, API_HEADERS, pipelineFrontendRcSpec)
+
+		# rabbitmq rc
+		with open(os.path.join(TEMPLATES_PATH, "rabbitmq-rc.json.jinja2")) as f:
+			rabbitmqRcSpec = prepareTemplate(f)  # TODO: kwargs
+
+		createResource(url, API_HEADERS, rabbitmqRcSpec)
+
+		# pipeline log handler rc
+		with open(os.path.join(TEMPLATES_PATH, "pipeline-log-handler-rc.json.jinja2")) as f:
+			pipelineLogHandlerRcSpec = prepareTemplate(f)  # TODO: kwargs
+
+		createResource(url, API_HEADERS, pipelineLogHandlerRcSpec)
+
+		# pipeline scheduler rc
+		with open(os.path.join(TEMPLATES_PATH, "pipeline-scheduler-rc.json.jinja2")) as f:
+			pipelineSchedulerRcSpec = prepareTemplate(f)  # TODO: kwargs
+
+		createResource(url, API_HEADERS, pipelineSchedulerRcSpec)
+
+		# pipeline canceller rc
+		with open(os.path.join(TEMPLATES_PATH, "pipeline-canceller-rc.json.jinja2")) as f:
+			pipelineCancellerRcSpec = prepareTemplate(f)  # TODO: kwargs
+
+		createResource(url, API_HEADERS, pipelineCancellerRcSpec)
+
+		# create a sqlite and config disks
+
+		# temporary (hostpath) sqlite volume
+
+		# temporary (hostpath) config volume
+
+		# temporary sqlite-reader-rc
+		with open(os.path.join(TEMPLATES_PATH, "sqlite-reader-rc.json.jinja2")) as f:
+			sqliteReaderRcSpec = prepareTemplate(f)  # TODO: kwargs
+
+		createResource(url, API_HEADERS, sqliteReaderRcSpec)
+
+		# temporary sqlite-writer-rc
+		with open(os.path.join(TEMPLATES_PATH, "sqlite-writer-rc.json.jinja2")) as f:
+			sqliteWriterRcSpec = prepareTemplate(f)  # TODO: kwargs
+
+		createResource(url, API_HEADERS, sqliteWriterRcSpec)
+
+		# set up a queue for watching the status of particular jobs
+		# port forward the rabbitmq service to a local port
+
+
+		# create the watch queue
+		PipelineExchange('WATCH_EXCHANGE')
+
+		# run pipeline jobs for creating/populating the service disks
+		createDisks = PipelineBuilder()
+
+		configDiskJob = PipelineSchema()
+		databaseDiskJob = PipelineSchema()
+
+		createDisks.addStep(configDiskJob)
+		createDisks.addStep(databaseDiskJob)
+
+		try:
+			jobIds = createDisks.run()
+
+		except PipelineSchemaValidationError as e:
+			pass  # TODO: print error and exit
+
+		except PipelineSubmitError as e:
+			pass  # TODO: print error and exit
+
+		# set a watch on each job id and wait for the jobs to complete
+		error = 0
+		errors = []
+		with futures.ThreadPoolExecutor(50) as p:
+			statuses = dict((p.submit(PipelineService.watchJob, j, 'WATCH_EXCHANGE') for j in jobIds))
+
+			for s in futures.as_completed(statuses):
+				if s.exception() is not None:
+					errors.append("ERROR: Couldn't create disk volume: {reason}".format(reason=s.exception()))
+					error = 1
+				else:
+					pass
+
+		if error == 1:
+			for e in errors:
+				print e
+
+			exit(-1)
+
+		# sqlite volume
+
+		# config volume
+
+		# restart the sqlite RCs with the newly created volumes
+
+		print "Service bootstrap successful!"
+
 
 	@staticmethod
 	def bootstrapMessageHandlers(pubsub, logging, config):
