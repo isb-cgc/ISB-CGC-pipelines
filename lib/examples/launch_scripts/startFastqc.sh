@@ -15,7 +15,10 @@ while read bamFile; do
 	baiFileName="${bamFileName}.bai"
 
 	# Provide an output directory for the FastQC outputs
-	path=<GCS-OUTPUT-PATH>
+	outputPath=<GCS-OUTPUT-PATH>
+	
+	# Provide a log directory for log outputs
+	logPath=<GCS-LOG-PATH>
 
     # Use the "calculateDiskSize" utility script to calculate the size of the disk
     diskSize=$(../utility_scripts/calculateDiskSize --inputFile $bamFile --roundToNearestGbInterval 100)
@@ -29,6 +32,6 @@ while read bamFile; do
 		--cores 1 --mem 2 \
 		--env INPUT_FILENAME="${bamFileName}" \
 		--diskSize $diskSize \
-		--logsPath <GCS-LOG-PATH> \
+		--logsPath $logPath \
 		--preemptible
 done < $1
