@@ -5,53 +5,43 @@ A framework for running bioinformatic workflows and pipelines at scale using the
 ## Prerequisites
 
 In order to use the ISB-CGC-pipelines tools, the following requirements must be met:
-- You must be an owner or editor of a Google Cloud Project
-- You must have the following APIs enabled in your Google Cloud Project: Google Compute Engine, Google Genomics
-- (Optional) Install the Google Cloud SDK, including "alpha" subcommands for the `gcloud` command
+- You must be an "Owner" or "Editor" of a Google Cloud Project.  Some initial configuration steps will require "Owner" status, but use of the command line tool and underlying API will only require "Editor" status.
+- You must have the following APIs enabled in your Google Cloud Project: Google Compute Engine, Google Genomics, Google Cloud Pub/Sub, Google Cloud Logging
+- (Optional) Install the Google Cloud SDK, including "alpha" subcommands for the `gcloud` command.  This step isn't required if you plan to use a Google Compute Engine VM for running the tool.
 
-## Installation
+## Helpful Information
 
-### Method 1: Manual Installation
+Understanding of the following technologies and topics will be essential for successfully developing pipelines that can be run using the ISB-CGC-pipelines framework, and it is recommended that you read the linked documentation if necessary before proceeding any further with these instructions:
 
-To install the tools manually, run the following commands (tested on Debian 8):
+- Docker ([Official Tutorials](https://docs.docker.com/engine/tutorials/))
+- Google Compute Engine ([Official Documentation](https://cloud.google.com/compute/docs/))
+- Google Container Registry ([Official Documentation](https://cloud.google.com/container-registry/docs/))
 
-```
-# install gcsfuse 
+## Service Account Configuration
 
-export GCSFUSE_REPO=gcsfuse-`lsb_release -c -s`
-echo "deb http://packages.cloud.google.com/apt $GCSFUSE_REPO main" | sudo tee /etc/apt/sources.list.d/gcsfuse.list
-curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
-sudo apt-get update && sudo apt-get install gcsfuse
+Note: The steps in this section require "Owner" status on a Google Cloud Project.
 
-# install additional python tools
+Once you've enabled the APIs mentioned above, you will need to modify the permissions for two service accounts within your project: the default "compute" service account, which is created for you by default when you enable the Compute Engine API, and the "cloud-logs" service account, which you may need to create manually  in order to manage some logging tasks associated with your pipeline jobs. 
 
-sudo apt-get install build-essential python-dev libffi-dev libssl-dev python-pip git wget sqlite3
-pip install -U virtualenv google-api-python-client pyinotify json-spec python-dateutil
+To determine whether or not the "cloud-logs" service account needs to be created, navigate to the ["IAM & Admin" section of the Cloud Console](https://console.cloud.google.com/iam-admin/projects), select the desired project from the list and check the member listing in that project for the name "cloud-logs@system.gserviceaccount.com".  If that account isn't listed, you can create it by clicking "Add Member" and entering the member name as "cloud-logs@system.gserviceaccount.com".  At this point, you can also select the roles "Editor" and "Pub/Sub Publisher" before clicking "Add".
 
-# install and minimally configure supervisor
+Once both of the required service accounts have been created, they must be granted the roles given in the table below in the "IAM & Admin" section of the Cloud Console:
 
-sudo apt-get install supervisor
-sudo groupadd supervisor
-sudo chgrp -R supervisor /etc/supervisor /var/log/supervisor
-sudo chmod -R 0775 /etc/supervisor /var/log/supervisor
+| Service Account Name | Required Roles |
+| ------ | ------|
+| xxxxxxxxxxxx-compute@developer.gserviceaccount.com | Editor, Logs Configuration Writer, Pub/Sub Admin | 
+| cloud-logs@system.gserviceaccount.com | Editor, Pub/Sub Publisher |
 
-# clone the ISB-CGC-pipelines repo
+To grant a role to an existing service account, simply click on the dropdown to the right of the particular service account name, check the roles that you wish to grant, and then click "Save".
 
-git clone https://github.com/isb-cgc/ISB-CGC-pipelines.git
+## Workstation Setup
 
-# install
+### Method 1: Cloud Installation
 
-cd ISB-CGC-pipelines && sudo ./install.sh
-```
-
-### Method 2: Use a startup script on Google Compute Engine
-
-A special startup script has been developed by the ISB for installing some common tools in an automated fashion on a Google Compute Engine VM.  ISB-CGC-pipelines is installed by default when the startup script is used to bootstrap a VM.  
-
-To use the startup script, make sure that your current workstation is equipped with the Google Cloud SDK and then run the following command (or a variation thereof) to start the bootstrapping process:
+The easiest way to set up the ISB-CGC-pipelines framework is to use the tool's Compute Engine startup script to bootstrap a the workstation.  To do this, you can run the following command (or a variation thereof) to create the workstation with the appropriate scopes:
 
 ```
-gcloud compute instances create my-pipeline-workstation --metadata startup-script-url=gs://isb-cgc-open/vm-startup-scripts/isb-cgc-workstation-startup.sh
+gcloud compute instances create my-pipeline-workstation --metadata startup-script-url=gs://isb-cgc-open/vm-startup-scripts/isb-cgc-pipelines-startup.sh --scopes cloud-platform
 ```
 
 Once the instance is ready, you can ssh to it using the following command:
@@ -60,7 +50,26 @@ Once the instance is ready, you can ssh to it using the following command:
 gcloud compute ssh my-pipeline-workstation
 ```
 
-For more information about the `gcloud compute` command and all of its possible arguments, please refer to the [documentation](https://cloud.google.com/compute/docs/gcloud-compute/).
+For more information about the `gcloud compute` command and all of its possible arguments, please refer to the [documentation](https://cloud.google.com/compute/docs/gcloud-compute/). 
+
+
+### Method 2: Local Installation
+
+To install the tool locally, you can run the same startup script used above on your local workstation by running the following commands:
+
+```
+# make sure git is installed
+
+sudo apt-get update && sudo apt-get install git
+
+# clone the repo
+
+git clone https://github.com/isb-cgc/ISB-CGC-pipelines.git
+
+# run the startup script
+
+cd ISB-CGC-pipelines && sudo ./instance-startup.sh
+```
 
 ## Basic Usage
 
@@ -72,23 +81,39 @@ First, update PYTHONPATH:
 
 `export PYTHONPATH=$PYTHONPATH:/usr/local/ISB-CGC-pipelines/lib`
 
-To configure the tool, run the following command and follow the prompts:
+You will also need to add yourself to the `supervisor` user group in order to start and stop the job scheduler:
+
+```
+# run the following command, and then log out and log back in again for the change to take effect
+
+sudo usermod -a -G supervisor $USER
+```
+
+To configure the framework, run the following command and follow the prompts:
 
 `isb-cgc-pipelines config set all`
 
+Most of the given prompts will provide a suitable default value that you can use by simply pressing enter at each prompt.  If you are unsure what to enter for a particular value, the recommended approach is to accept the default value proposed for the given item.  The only exception to this is the value for the GCP project id, which must be provided by you during the configuration process.
+
+There is one last configuration step, which is to "bootstrap" the messaging system that underlies the job scheduling/monitoring system.  To initialize this process simply run `isb-cgc-pipelines bootstrap`, which should report a success message if the bootstrap process was successful.  
+
+If you run into problems with the messaging bootstrap process, double check that you have set permissions appropriately for your service accounts (mentioned above in a previous section).
+
 ### Starting and Stopping the Scheduler
 
-In order to start up the scheduler, you need to belong to the `supervisor` Linux group.  Run the following command and then log out and back in again for the update to take effect:
-
-`sudo usermod -a -G supervisor $USER`
-
-Then start the scheduler:
+To start the scheduler:
 
 `isb-cgc-pipelines scheduler start`
 
-To stop the scheduler later on:
+To stop the scheduler:
 
 `isb-cgc-pipelines scheduler stop`
+
+### Creating buckets for outputs and logs
+
+Before you can run any jobs, you will need to make sure that you have read and write access to at least one Google Cloud Storage bucket for storing logs and outputs.  You can run the `gsutil mb` command to create a new bucket from the command line, or you can also use the "Create Bucket" button from the Cloud Storage section of the Cloud Console.
+
+For more information about making buckets using `gsutil`, refer to the [official documentation](https://cloud.google.com/storage/docs/gsutil/commands/mb).
 
 ### Submitting a Task
 
@@ -116,7 +141,7 @@ Here is an example command that will submit a "fastqc" task, which will use an o
 ```
 isb-cgc-pipelines submit --pipelineName fastqc \
                 --inputs gs://isb-cgc-open/ccle/BRCA/DNA-Seq/C836.MDA-MB-436.1.bam:C836.MDA-MB-436.1.bam,gs://isb-cgc-open/ccle/BRCA/DNA-Seq/C836.MDA-MB-436.1.bam.bai:C836.MDA-MB-436.1.bam.bai \
-                --outputs *_fastqc.zip:gs://<YOUR_GCS_OUTPUT_PATH>,*_fastqc.html:gs://<YOUR_GCS_OUTPUT_PATH> \
+                --outputs gs://<YOUR_GCS_OUTPUT_PATH>:*_fastqc.zip,gs://<YOUR_GCS_OUTPUT_PATH>:*_fastqc.html \
                 --cmd "fastqc C836.MDA-MB-436.1.bam" \
                 --imageName b.gcr.io/isb-cgc-public-docker-images/fastqc \
                 --cores 1 --mem 2 \
@@ -161,6 +186,33 @@ Another alternative way to find information about your submitted task is to quer
 ```
 gcloud alpha genomics operations describe <OPERATION_ID>
 ```
+
+## Cancelling Jobs
+
+If you'd like to stop a job (or set of jobs), you can run one of the following variations of the `isb-cgc-pipelines stop` subcommand:
+
+```
+isb-cgc-pipelines stop --jobId <jobId> # stops a single job by id
+
+isb-cgc-pipelines stop --pipeline <pipelineName>  # stops any job with the given name
+
+isb-cgc-pipelines stop --tag <tag>  # stops any job with the given tag
+
+```
+
+If the job is in the "RUNNING" state, the job will be killed during processing.  If the job is still in the "WAITING" state, it will not be submitted in the future.
+
+## Handling Failures
+
+There are two main categories of situations in which a submitted job will fail.  The most obvious case is the one where the job itself is specified incorrectly (input or output locations are invalid, the Docker image doesn't exist at the specified location, the container script contains a bug, etc.), in which case the monitoring system will report that the status of the job is "FAILED". 
+
+The other situation arises if a VM is preempted, which is only relevant if you've set the "--preemptible" flag for the particular job.  In this situation, a job may be cut short (i.e., preempted) by Google Compute Engine for a variety of reasons, some of which may be unrelated to the way that the job was specified by the user.  In addition to the fact that preemptible VMs have a maximum lifetime of 24 hours, a VM may also be preempted at random or if it is attempting to use more resources than it requested.
+
+The number of preemptions for any particular job will be listed in the far right-hand column of the output of the `isb-cgc-pipelines list jobs ...` command.  If you decided to set preempted jobs to restart automatically in the tool's configuration, this number will increase each time a job is preempted and subsequently restarted.  You can use this information to determine the appropriate course of action when jobs are preempted -- if a job is only preempted once before succeeding, you can probably assume that the VM was preempted at random.  However, if you notice that a job is frequently preempted, this may be a sign that the job is consistently attempting to use more resources than it requested and you may need to modify future submissions of that particular job in order for it to run to completion.
+
+In either case (preemption or outright failure), you can modify the job request sent to the Google Genomics Pipelines API Service by hand by running `isb-cgc-pipelines edit --jobId <jobId>`.  This will open the request as a file in the default editor on your system if the $EDITOR variable is set, and will use `/usr/bin/nano` otherwise.  Once you've made your edits, saved and quit, the modified request will be ingested back into the jobs database so that future restarts of that job will use the modified request.  
+
+In the case of a job that has been frequently preempted, you can either a) wait for the job's next preemption to see the change take effect, or b) stop and restart the job.  For jobs with a "FAILED" status, you will only need to restart the job by running `isb-cgc-pipelines restart <jobId>`.
 
 ## Advanced Usage
 
