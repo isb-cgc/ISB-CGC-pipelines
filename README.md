@@ -212,7 +212,7 @@ The number of preemptions for any particular job will be listed in the far right
 
 In either case (preemption or outright failure), you can modify the job request sent to the Google Genomics Pipelines API Service by hand by running `isb-cgc-pipelines edit --jobId <jobId>`.  This will open the request as a file in the default editor on your system if the $EDITOR variable is set, and will use `/usr/bin/nano` otherwise.  Once you've made your edits, saved and quit, the modified request will be ingested back into the jobs database so that future restarts of that job will use the modified request.  
 
-In the case of a job that has been frequently preempted, you can either a) wait for the job's next preemption to see the change take effect, or b) stop and restart the job.  For jobs with a "FAILED" status, you will only need to restart the job by running `isb-cgc-pipelines restart <jobId>`.
+In the case of a job that has been frequently preempted, you can either a) wait for the job's next preemption to see the change take effect, or b) stop and restart the job.  For jobs with a "FAILED" status, you will only need to restart the job by running `isb-cgc-pipelines restart --jobId <jobId>`.
 
 ## [Advanced Usage](#advanced-usage)
 
