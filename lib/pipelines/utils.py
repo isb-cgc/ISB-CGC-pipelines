@@ -582,8 +582,12 @@ class PipelineSchedulerUtils(object):
 			c.set("program:pipelineDeleteLogsHandler", "autorestart", "true")
 			c.set("program:pipelineDeleteLogsHandler", "user", user)
 
-			with open("/etc/supervisor/supervisord.conf", "w") as f:
-				c.write(f)
+			try:
+				with open("/etc/supervisor/supervisord.conf", "w") as f:
+					c.write(f)
+			except IOError as e:
+				print "ERROR: couldn't start the scheduler: {reason}".format(reason=e)
+				exit(-1)
 
 		try:
 			subprocess.check_call(["sudo", "service", "supervisor", "restart"])
