@@ -1,6 +1,6 @@
 # ISB-CGC-pipelines
 
-A framework for running bioinformatic workflows and pipelines at scale using the Google Genomics Pipelines API as the underlying task-runner.
+A framework for running bioinformatic workflows and pipelines at scale using the [Google Genomics Pipelines API](https://cloud.google.com/genomics/reference/rest/v1alpha2/pipelines) as the underlying task-runner.
 
 ## [Terminology Clarification](#terminology-clarification)
 
