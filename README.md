@@ -2,14 +2,14 @@
 
 A framework for running bioinformatic workflows and pipelines at scale using the Google Pipelines API as the underlying task-runner.
 
-## Prerequisites
+## [Prerequisites](#prerequisites)
 
 In order to use the ISB-CGC-pipelines tools, the following requirements must be met:
 - You must be an "Owner" or "Editor" of a Google Cloud Project.  Some initial configuration steps will require "Owner" status, but use of the command line tool and underlying API will only require "Editor" status.
 - You must have the following APIs enabled in your Google Cloud Project: Google Compute Engine, Google Genomics, Google Cloud Pub/Sub, Google Cloud Logging
 - (Optional) Install the Google Cloud SDK, including "alpha" subcommands for the `gcloud` command.  This step isn't required if you plan to use a Google Compute Engine VM for running the tool.
 
-## Helpful Information
+## [Helpful Information](#helpful-information)
 
 Understanding of the following technologies and topics will be essential for successfully developing pipelines that can be run using the ISB-CGC-pipelines framework, and it is recommended that you read the linked documentation if necessary before proceeding any further with these instructions:
 
@@ -17,7 +17,7 @@ Understanding of the following technologies and topics will be essential for suc
 - Google Compute Engine ([Official Documentation](https://cloud.google.com/compute/docs/))
 - Google Container Registry ([Official Documentation](https://cloud.google.com/container-registry/docs/))
 
-## Service Account Configuration
+## [Service Account Configuration](#service-account-configuration)
 
 Note: The steps in this section require "Owner" status on a Google Cloud Project.
 
@@ -34,7 +34,7 @@ Once both of the required service accounts have been created, they must be grant
 
 To grant a role to an existing service account, simply click on the dropdown to the right of the particular service account name, check the roles that you wish to grant, and then click "Save".
 
-## Workstation Setup
+## [Workstation Setup](#workstation-setup)
 
 ### Method 1: Cloud Installation
 
@@ -71,11 +71,11 @@ git clone https://github.com/isb-cgc/ISB-CGC-pipelines.git
 cd ISB-CGC-pipelines && sudo ./instance-startup.sh
 ```
 
-## Basic Usage
+## [Basic Usage](#basic-usage)
 
 The most basic way to use the tool is to use the built-in command line utility, `isb-cgc-pipelines`.  The following sections will describe what the various subcommands do, but you can run `isb-cgc-pipelines -h` at any time to print usage information.
 
-### Configuration
+### [Configuration](#configuration)
 
 First, update PYTHONPATH:
 
@@ -99,7 +99,7 @@ There is one last configuration step, which is to "bootstrap" the messaging syst
 
 If you run into problems with the messaging bootstrap process, double check that you have set permissions appropriately for your service accounts (mentioned above in a previous section).
 
-### Starting and Stopping the Scheduler
+### [Starting and Stopping the Scheduler](#starting-and-stopping-the-scheduler)
 
 To start the scheduler:
 
@@ -109,13 +109,13 @@ To stop the scheduler:
 
 `isb-cgc-pipelines scheduler stop`
 
-### Creating buckets for outputs and logs
+### [Creating buckets for outputs and logs](#creating-buckets-for-outputs-and-logs)
 
 Before you can run any jobs, you will need to make sure that you have read and write access to at least one Google Cloud Storage bucket for storing logs and outputs.  You can run the `gsutil mb` command to create a new bucket from the command line, or you can also use the "Create Bucket" button from the Cloud Storage section of the Cloud Console.
 
 For more information about making buckets using `gsutil`, refer to the [official documentation](https://cloud.google.com/storage/docs/gsutil/commands/mb).
 
-### Submitting a Task
+### [Submitting a Task](#submitting-a-task)
 
 To submit a task, you can use the `submit` subcommand, which takes the following possible arguments:
 
@@ -150,7 +150,7 @@ isb-cgc-pipelines submit --pipelineName fastqc \
                 --preemptible
 ```
 
-### Monitoring Tasks
+### [Monitoring Tasks](#monitoring-tasks)
 
 To see the status of all tasks with a particular pipeline name at a glance, run the following command:
 
@@ -187,7 +187,7 @@ Another alternative way to find information about your submitted task is to quer
 gcloud alpha genomics operations describe <OPERATION_ID>
 ```
 
-## Cancelling Jobs
+## [Cancelling Jobs](#cancelling-jobs)
 
 If you'd like to stop a job (or set of jobs), you can run one of the following variations of the `isb-cgc-pipelines stop` subcommand:
 
@@ -202,7 +202,7 @@ isb-cgc-pipelines stop --tag <tag>  # stops any job with the given tag
 
 If the job is in the "RUNNING" state, the job will be killed during processing.  If the job is still in the "WAITING" state, it will not be submitted in the future.
 
-## Handling Failures
+## [Handling Failures](#handling-failures)
 
 There are two main categories of situations in which a submitted job will fail.  The most obvious case is the one where the job itself is specified incorrectly (input or output locations are invalid, the Docker image doesn't exist at the specified location, the container script contains a bug, etc.), in which case the monitoring system will report that the status of the job is "FAILED". 
 
@@ -214,18 +214,18 @@ In either case (preemption or outright failure), you can modify the job request 
 
 In the case of a job that has been frequently preempted, you can either a) wait for the job's next preemption to see the change take effect, or b) stop and restart the job.  For jobs with a "FAILED" status, you will only need to restart the job by running `isb-cgc-pipelines restart <jobId>`.
 
-## Advanced Usage
+## [Advanced Usage](#advanced-usage)
 
 This section covers some more advanced use cases, such as running a DAG or sequence of tasks.  For this particular use case, you can use the underlying API directly to create more complicated workflows.
 
-### The PipelineBuilder API
+### [The PipelineBuilder API](#pipeline-builder-api)
 
 More info coming soon!
 
-## Future Plans
+## [Future Plans](#future-plans)
 
 More info coming soon!
 
-## Bug Reports
+## [Bug Reports](#bug-reports)
 
 If you encounter any bugs, anomalous or unintended behavior, please feel free to submit any issues/feedback to the issue tracker in this repo.
