@@ -1,6 +1,12 @@
 # ISB-CGC-pipelines
 
-A framework for running bioinformatic workflows and pipelines at scale using the Google Pipelines API as the underlying task-runner.
+A framework for running bioinformatic workflows and pipelines at scale using the [Google Genomics Pipelines API](https://cloud.google.com/genomics/reference/rest/v1alpha2/pipelines) as the underlying task-runner.
+
+## [Terminology Clarification](#terminology-clarification)
+
+The use of the term "pipeline" in the context of this project is somewhat overloaded.  The name of the project, ISB-CGC-pipelines, was derived from the fact that the framework is built on top of the Google Genomics Pipelines API, which itself uses the the term "pipeline" somewhat ambiguously.  Within the context of the Google Genomics Pipelines API, a "pipeline" is simply a single task run within a Docker container.  What's more, here a "single task" could be taken to mean a single Linux command or a lengthy script which executes an entire "pipeline" in the traditional sense of the word and is completely context dependent due to the flexible nature of the technology.  
+
+It is possible to build true (directed, acyclic) "pipelines" using the [advanced features](#advanced-usage) of the ISB-CGC-pipelines framework, which amounts to running Google Genomics Pipelines API tasks in sequence and/or in parallel with one another.  The important thing to keep in mind about the use of the term "pipeline" in this README is that it depends somewhat on what the term "pipeline" means to you as a developer and how you've chosen to design your code, whether you've decided to run an entire "pipeline" within a single Docker container or to string a number of individual "pipeline" tasks together in order to keep your usage of Docker fairly modular.  Both approaches have benefits and tradeoffs, and both are also possible using this framework.  
 
 ## [Prerequisites](#prerequisites)
 
@@ -70,6 +76,7 @@ git clone https://github.com/isb-cgc/ISB-CGC-pipelines.git
 
 cd ISB-CGC-pipelines && sudo ./instance-startup.sh
 ```
+Note that you must have root privileges on whatever system you choose to install the tool.  It is recommended to use Method #1 for installing the tool on a GCE VM if you don't have root access on your local machine.
 
 ## [Basic Usage](#basic-usage)
 
