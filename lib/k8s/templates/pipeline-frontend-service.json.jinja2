@@ -1,0 +1,17 @@
+{
+    "kind": "Service",
+    "apiVersion": "v1",
+    "metadata": {
+        "name": "pipeline-frontend"
+    },
+    "spec": {
+        "ports": [
+            {
+                "port": 80
+            }
+        ],
+        "selector": {
+                "role": "pipeline-frontend"
+        }
+    }
+}

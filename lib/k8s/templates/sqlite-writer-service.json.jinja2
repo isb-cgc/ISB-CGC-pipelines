@@ -1,0 +1,17 @@
+{
+    "kind": "Service",
+    "apiVersion": "v1",
+    "metadata": {
+        "name": "sqlite-writer"
+    },
+    "spec": {
+        "ports": [
+            {
+                "port": 3309
+            }
+        ],
+        "selector": {
+                "role": "sqlite-writer"
+        }
+    }
+}

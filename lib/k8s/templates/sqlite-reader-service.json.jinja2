@@ -1,0 +1,17 @@
+{
+    "kind": "Service",
+    "apiVersion": "v1",
+    "metadata": {
+        "name": "sqlite-reader"
+    },
+    "spec": {
+        "ports": [
+            {
+                "port": 3308
+            }
+        ],
+        "selector": {
+                "role": "sqlite-reader"
+        }
+    }
+}

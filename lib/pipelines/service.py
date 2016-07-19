@@ -15,6 +15,7 @@ from pipelines.schema import PipelineSchema
 from pipelines.builder import PipelineBuilder, PipelineSchemaValidationError, PipelineSubmitError
 from pipelines.db import PipelineDatabase, PipelineDatabaseError
 from pipelines.queue import PipelineQueue, PipelineExchange
+from pipelines.disks import DataDisk, DataDiskError
 from ConfigParser import SafeConfigParser
 
 
@@ -142,8 +143,6 @@ class PipelineService:
 		queue = PipelineQueue('PIPELINE_JOB_{j}'.format(j=jobId))
 		queue.bindToExchange(exchangeName, jobId)
 
-		diskName = None
-
 		while True:
 			body, method = queue.get()
 
@@ -151,13 +150,11 @@ class PipelineService:
 				body = json.loads(body)
 
 				if body["current_status"] == "SUCCEEDED":
-					pass  # TODO: get the name of the disk
+					return jobId
 				else:
 					raise PipelineServiceError("Job {j} has current status {s}!".format(j=jobId, s=body["current_status"]))
 			else:
 				pass
-
-		return diskName
 
 
 	@staticmethod
@@ -176,12 +173,12 @@ class PipelineService:
 			response = SESSION.post(url, headers=headers, json=resource)
 
 			# if the response isn't what's expected, raise an exception
-			if response.status_code != 201:
-				if response.status_code == 409:  # already exists
-					pass
-				else:
-					print "ERROR: Namespace creation failed: {reason}".format(reason=response.status_code)
-					exit(-1)  # probably should raise an exception
+			if response.status_code != 200:
+				print "ERROR: resource deletion failed: {reason}".format(reason=response.status_code)
+				exit(-1)  # probably should raise an exception
+
+		def deleteResource(url, headers, resourceName):
+			response = SESSION.delete(os.path.join(url, resourceName))
 
 		def createClusterAdminPassword():
 			return ''.join(SystemRandom().choice(string.ascii_uppercase + string.ascii_lowercase + string.digits) for _ in range(16))
@@ -333,62 +330,54 @@ class PipelineService:
 		# pipeline front-end service
 		path = os.path.join(TEMPLATES_PATH, "pipeline-frontend-service.json.jinja2")
 		with open(path) as f:
-			pipelineFrontendServiceSpec = prepareTemplate(f)  # TODO: kwargs
+			pipelineFrontendServiceSpec = prepareTemplate(f)
 
 		createResource(serviceUrl, API_HEADERS, pipelineFrontendServiceSpec)
 
 		# sqlite-reader-service
 		with open(os.path.join(TEMPLATES_PATH, "sqlite-reader-service.json.jinja2")) as f:
-			sqliteReaderServiceSpec = prepareTemplate(f)  # TODO: kwargs
+			sqliteReaderServiceSpec = prepareTemplate(f)
 
 		createResource(serviceUrl, API_HEADERS, sqliteReaderServiceSpec)
 
 		# sqlite-writer-service
 		with open(os.path.join(TEMPLATES_PATH, "sqlite-writer-service.json.jinja2")) as f:
-			sqliteWriterServiceSpec = prepareTemplate(f)  # TODO: kwargs
+			sqliteWriterServiceSpec = prepareTemplate(f)
 
 		createResource(serviceUrl, API_HEADERS, sqliteWriterServiceSpec)
 
 		# rabbitmq service
 		with open(os.path.join(TEMPLATES_PATH, "rabbitmq-service.json.jinja2")) as f:
-			rabbitmqServiceSpec = prepareTemplate(f)  # TODO: kwargs
+			rabbitmqServiceSpec = prepareTemplate(f)
 
 		createResource(serviceUrl, API_HEADERS, rabbitmqServiceSpec)
 
 		# pipeline front-end rc
 		with open(os.path.join(TEMPLATES_PATH, "pipeline-frontend-rc.json.jinja2")) as f:
-			pipelineFrontendRcSpec = prepareTemplate(f)  # TODO: kwargs
+			pipelineFrontendRcSpec = prepareTemplate(f, replicas=5)  # TODO: add replication factor to local config
 
 		createResource(rcUrl, API_HEADERS, pipelineFrontendRcSpec)
 
-		# rabbitmq rc
-		with open(os.path.join(TEMPLATES_PATH, "rabbitmq-rc.json.jinja2")) as f:
-			rabbitmqRcSpec = prepareTemplate(f)  # TODO: kwargs
-
-		createResource(rcUrl, API_HEADERS, rabbitmqRcSpec)
-
-		# temporary (hostpath) sqlite volume
-		with open(os.path.join(TEMPLATES_PATH, "temporary-sqlite-volume.json.jinja2")) as f:
-			temporarySqliteVolume = prepareTemplate(f)  # TODO: kwargs
-
-		# temporary (hostpath) config volume
-		with open(os.path.join(TEMPLATES_PATH, "temporary-sqlite-volume.json.jinja2")) as f:
-			temporarySqliteVolume = prepareTemplate(f)  # TODO: kwargs
-
-		# temporary sqlite-reader-rc
+		# temporary sqlite-reader-rc (with hostpath volume)
 		with open(os.path.join(TEMPLATES_PATH, "temporary-sqlite-reader-rc.json.jinja2")) as f:
 			temporarySqliteReaderRcSpec = prepareTemplate(f)  # TODO: kwargs
 
 		createResource(rcUrl, API_HEADERS, temporarySqliteReaderRcSpec)
 
-		# temporary sqlite-writer-rc
+		# temporary sqlite-writer-rc (with hostpath volume)
 		with open(os.path.join(TEMPLATES_PATH, "temporary-sqlite-writer-rc.json.jinja2")) as f:
 			temporarySqliteWriterRcSpec = prepareTemplate(f)  # TODO: kwargs
 
 		createResource(rcUrl, API_HEADERS, temporarySqliteWriterRcSpec)
 
-		# temporary config-writer-rc
+		# temporary config-writer-rc (with hostpath volume)
 		with open(os.path.join(TEMPLATES_PATH, "temporary-config-writer-rc.json.jinja2")) as f:
+			temporaryConfigWriterRcSpec = prepareTemplate(f)  # TODO: kwargs
+
+		createResource(rcUrl, API_HEADERS, temporaryConfigWriterRcSpec)
+
+		# temporary rabbitmq-rc (with hostpath volume)
+		with open(os.path.join(TEMPLATES_PATH, "temporary-rabbitmq-rc.json.jinja2")) as f:
 			temporaryConfigWriterRcSpec = prepareTemplate(f)  # TODO: kwargs
 
 		createResource(rcUrl, API_HEADERS, temporaryConfigWriterRcSpec)
@@ -419,8 +408,22 @@ class PipelineService:
 		# run pipeline jobs for creating/populating the service disks
 		createDisks = PipelineBuilder()
 
-		configDiskJob = PipelineSchema()
-		databaseDiskJob = PipelineSchema()
+		try:
+			configDisk = DataDisk()  # TODO: params
+
+		except DataDiskError as e:
+			raise PipelineServiceError("Couldn't create the service volume (config): {reason}".format(reason=e))
+
+		try:
+			databaseDisk = DataDisk()  # TODO: params
+
+		except DataDiskError as e:
+			raise PipelineServiceError("Couldn't create the service volume (database): {reason}".format(reason=e))
+
+		configDiskJob = PipelineSchema()  # TODO: params
+		configDiskJob.addExistingDisk()  # TODO: params
+		databaseDiskJob = PipelineSchema()  # TODO: params
+		databaseDiskJob.addExistingDisk()  # TODO: params
 
 		createDisks.addStep(configDiskJob)
 		createDisks.addStep(databaseDiskJob)
@@ -437,17 +440,14 @@ class PipelineService:
 		# set a watch on each job id and wait for the jobs to complete
 		error = 0
 		errors = []
-		diskNames = []
 
-		with futures.ThreadPoolExecutor(50) as p:
+		with futures.ThreadPoolExecutor(2) as p:
 			statuses = dict((p.submit(PipelineService.watchJob, j, 'WATCH_EXCHANGE') for j in jobIds))
 
 			for s in futures.as_completed(statuses):
 				if s.exception() is not None:
 					errors.append("ERROR: Couldn't create disk volume: {reason}".format(reason=s.exception()))
 					error = 1
-				else:
-					diskNames.append(s.result())
 
 		if error == 1:
 			for e in errors:
@@ -455,13 +455,24 @@ class PipelineService:
 
 			exit(-1)
 
-		for d in diskNames:
-			if re.match('^sqlite.*', d):
-				pass  # TODO: create permanent sqlite volume
-			elif re.match('^config.*', d):
-				pass  # TODO: create permanent config volume
+		# create the permanent volumes
+		# permanent (pd) sqlite volume
+		with open(os.path.join(TEMPLATES_PATH, "sqlite-volume.json.jinja2")) as f:
+			sqliteVolume = prepareTemplate(f)  # TODO: kwargs
 
-		# restart the sqlite RCs with the newly created volumes
+		# permanent (pd) config volume
+		with open(os.path.join(TEMPLATES_PATH, "config-volume.json.jinja2")) as f:
+			configVolume = prepareTemplate(f)  # TODO: kwargs
+
+		# restart the sqlite and rabbitmq RCs with the newly created volumes
+
+		# rabbitmq rc
+		with open(os.path.join(TEMPLATES_PATH, "rabbitmq-rc.json.jinja2")) as f:
+			rabbitmqRcSpec = prepareTemplate(f, pdName="")  # TODO: pdName
+
+		deleteResource(rcUrl, API_HEADERS, "rabbitmq-server")
+		createResource(rcUrl, API_HEADERS, rabbitmqRcSpec)
+
 
 		print "Service bootstrap successful!"
 

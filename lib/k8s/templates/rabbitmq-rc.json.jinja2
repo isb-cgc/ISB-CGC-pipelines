@@ -1,0 +1,51 @@
+{
+      "apiVersion": "v1",
+      "kind": "ReplicationController",
+      "metadata": {
+          "name": "rabbitmq-server"
+      },
+      "spec": {
+          "replicas": 1,
+          "selector": {
+              "role": "rabbitmq-server"
+          },
+          "template": {
+              "metadata": {
+                  "labels": {
+                      "role": "rabbitmq-server"
+                  }
+              },
+              "spec": {
+                  "containers": [
+                      {
+                          "name": "rabbitmq-server",
+                          "image": "rabbitmq",
+                          "ports": [
+                              {
+                                  "name": "rabbitmq",
+                                  "containerPort": 5672
+                              }
+                          ],
+                          "volumeMounts": [
+                              {
+                                  "name": "rabbitmq-data",
+                                  "mountPath": "/var/lib/rabbitmq",
+                                  "readOnly": "false"
+                              }
+                          ]
+                      }
+                  ],
+                  "volumes": [
+                      {
+                          "name": "rabbitmq-data",
+                          "gcePersistentDisk": {
+                              "pdName": "{{ pdName }}",
+                              "readOnly": "false",
+                              "fsType": "ext4"
+                          }
+                      }
+                  ]
+              }
+          }
+      }
+  }

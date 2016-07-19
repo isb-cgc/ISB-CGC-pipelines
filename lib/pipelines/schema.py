@@ -3,7 +3,7 @@ import uuid
 
 
 class PipelineSchema(object):
-	def __init__(self, name, config, logsPath, imageName, scriptUrl=None, cmd=None, cores=1, mem=1, diskSize=None,
+	def __init__(self, name, config, logsPath, imageName, scriptUrl=None, cmd=None, cores=1, mem=1, zone=None, diskSize=None,
 	             diskType=None, env=None, inputs=None, outputs=None, tag=None, children=None, metadata=None,
 	             preemptible=False):  # config must be an instance of pipelines.config.PipelineConfig
 		self.name = name
@@ -21,7 +21,7 @@ class PipelineSchema(object):
 					"projectId": config.project_id,
 					"resources": {
 						"disks": [],
-						"zones": config.zones.split(',')
+						"zones": [zone if zone is not None else x for x in config.zones.split(',')]
 					},
 					"logging": {},
 					"inputs": {},
@@ -38,7 +38,7 @@ class PipelineSchema(object):
 					"outputParameters": [],
 					"resources": {
 						"disks": [],
-						"zones": config.zones.split(',')
+						"zones": [zone if zone is not None else x for x in config.zones.split(',')]
 					},
 					"docker": {}
 				}
@@ -159,6 +159,23 @@ class PipelineSchema(object):
 			"name": name,
 			"type": diskType,
 			"sizeGb": sizeGb,
+			"autoDelete": autoDelete,
+			"readOnly": readOnly,
+			"mountPoint": mountPath
+		})
+
+	def addExistingDisk(self, name, diskType, projectId, zone, mountPath, autoDelete=True, readOnly=False):
+		self._schema["request"]["pipelineArgs"]["resources"]["disks"].append({
+			"name": name,
+			"type": diskType,
+			"source": "projects/{projectId}/zones/{zone}/disks/{name}".format(projectId=projectId, zone=zone, name=name),
+			"autoDelete": autoDelete,
+			"readOnly": readOnly
+		})
+		self._schema["request"]["ephemeralPipeline"]["resources"]["disks"].append({
+			"name": name,
+			"type": diskType,
+			"source": "projects/{projectId}/zones/{zone}/disks/{name}".format(projectId=projectId, zone=zone, name=name),
 			"autoDelete": autoDelete,
 			"readOnly": readOnly,
 			"mountPoint": mountPath

@@ -168,7 +168,7 @@ if __name__ == "__main__":
 				query.append("createTimeAfter={c}".format(c=args.createTimeAfter))
 
 			elif args.limit:
-				query.append("limit={l}".format(limit=args.limit))
+				query.append("limit={l}".format(l=args.limit))
 
 			resp = sendRequest(config.service_endpoint, config.service_port, uri.format(route=JOBS_LIST_CREATE_EXP, query='&'.join(query)))
 			jobs = json.loads(resp.get("jobsList"))
