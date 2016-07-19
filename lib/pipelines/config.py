@@ -56,7 +56,7 @@ class PipelineConfig(SafeConfigParser, object):
 			"max_running_jobs": {
 				"section": "pipelines",
 				"required": True,
-				"default": 200,
+				"default": 2000,
 				"message": "Enter the maximum number of running jobs for any given time (leave blank to use default 2000): "
 			},
 			"autorestart_preempted": {
