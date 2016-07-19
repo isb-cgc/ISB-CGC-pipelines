@@ -41,14 +41,14 @@ class PubsubMessageHandlers(object):
 		if log["jsonPayload"]["event_subtype"] == "compute.instances.preempted":
 
 			try:
-				operationId =  pipelineDbUtils.getJobInfo(select=["operation_id"], where={"instance_name": instance})[0].operation_id
+				jobInfo = pipelineDbUtils.getJobInfo(select=["operation_id", "job_id", "pipeline_name", "tag", "create_time", "current_status"], where={"instance_name": instance})[0]
 
 			except IndexError:
 				PipelineSchedulerUtils.writeStderr("Instance {i} preempted, but no record exists in jobs database".format(i=instance))
 
 			else:
+				operationId = jobInfo.operation_id
 				PipelineSchedulerUtils.writeStdout("Instance {i} (operation {o}) preempted!".format(i=instance, o=operationId))
-				jobInfo = pipelineDbUtils.getJobInfo(select=["job_id", "pipeline_name", "tag", "create_time", "current_status"], where={"operation_id": operationId})
 
 				children = [x[0] for x in pipelineDbUtils.getChildJobs(jobInfo[0].job_id)]
 
@@ -77,7 +77,7 @@ class PubsubMessageHandlers(object):
 		elif log["jsonPayload"]["event_subtype"] == "compute.instances.delete":
 			# update the status of the job in the jobs db
 			try:
-				jobInfo = pipelineDbUtils.getJobInfo(select=["operation_id", "current_status"], where={"instance_name": instance})[0]
+				jobInfo = pipelineDbUtils.getJobInfo(select=["job_id", "pipeline_name", "tag", "create_time", "operation_id", "current_status"], where={"instance_name": instance})[0]
 
 			except IndexError:
 				PipelineSchedulerUtils.writeStderr("Instance {i} deleted, but no record exists in jobs database".format(i=instance))
@@ -96,7 +96,6 @@ class PubsubMessageHandlers(object):
 
 					PipelineSchedulerUtils.writeStdout("Instance {i} (operation {o}) completed!".format(i=instance, o=operationId))
 
-					jobInfo = pipelineDbUtils.getJobInfo(select=["job_id", "pipeline_name", "tag", "create_time", "current_status"], where={"operation_id": operationId})
 					children = [x[0] for x in pipelineDbUtils.getChildJobs(jobInfo[0].job_id)]
 
 					if status["done"] and "error" not in status.keys():
