@@ -46,14 +46,14 @@ class PubsubMessageHandlers(object):
 		if log["jsonPayload"]["event_subtype"] == "compute.instances.preempted":
 
 			try:
-				operationId =  pipelineDatabase.getJobInfo(select=["operation_id"], where={"instance_name": instance})[0].operation_id
+				jobInfo = pipelineDatabase.getJobInfo(select=["operation_id", "job_id", "pipeline_name", "tag", "create_time", "current_status"], where={"instance_name": instance})[0]
 
 			except IndexError:
 				PipelineLogger.writeStderr("Instance {i} preempted, but no record exists in jobs database".format(i=instance))
 
 			else:
+				operationId = jobInfo.operation_id
 				PipelineLogger.writeStdout("Instance {i} (operation {o}) preempted!".format(i=instance, o=operationId))
-				jobInfo = pipelineDatabase.getJobInfo(select=["job_id", "pipeline_name", "tag", "create_time", "current_status"], where={"operation_id": operationId})
 
 				children = [x[0] for x in pipelineDatabase.getChildJobs(jobInfo[0].job_id)]
 
@@ -98,7 +98,7 @@ class PubsubMessageHandlers(object):
 		elif log["jsonPayload"]["event_subtype"] == "compute.instances.delete":
 			# update the status of the job in the jobs db
 			try:
-				jobInfo = pipelineDatabase.getJobInfo(select=["operation_id", "current_status"], where={"instance_name": instance})[0]
+				jobInfo = pipelineDatabase.getJobInfo(select=["job_id", "pipeline_name", "tag", "create_time", "operation_id", "current_status"], where={"instance_name": instance})[0]
 
 			except IndexError:
 				PipelineLogger.writeStderr("Instance {i} deleted, but no record exists in jobs database".format(i=instance))
@@ -117,7 +117,6 @@ class PubsubMessageHandlers(object):
 
 					PipelineLogger.writeStdout("Instance {i} (operation {o}) completed!".format(i=instance, o=operationId))
 
-					jobInfo = pipelineDatabase.getJobInfo(select=["job_id", "pipeline_name", "tag", "create_time", "current_status"], where={"operation_id": operationId})
 					children = [x[0] for x in pipelineDatabase.getChildJobs(jobInfo[0].job_id)]
 
 					if status["done"] and "error" not in status.keys():
