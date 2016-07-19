@@ -50,7 +50,7 @@ def main(config):
 			ssdTest = -1
 
 			# if the quota isn't maxed, and the number of currently running jobs is less than the user defined max, start the job
-			while not cpuTest and hddTest and ssdTest and maxJobsTest:
+			while not cpuTest > 0 and not hddTest > 0 and not ssdTest > 0 and not maxJobsTest > 0:
 				for z in config.zones.split(','):
 					region = os.path.basename(compute.zones().get(project=config.project_id, zone=z).execute()["region"])
 					quotas = compute.regions().get(project=config.project_id, region=region)["quotas"]
