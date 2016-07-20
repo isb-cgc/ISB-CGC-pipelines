@@ -67,11 +67,11 @@ def main(config):
 
 				currentlyRunning = len(pipelineDbUtils.getJobInfo(select=["job_id"], where={"current_status": "RUNNING"}))
 				maxJobsTest = int(config.max_running_jobs) - (currentlyRunning + 1)
-				cpuTest = cpuTotal - (cpuUsage + body["pipelineArgs"]["resources"]["minimumCpuCores"])
+				cpuTest = cpuTotal - (cpuUsage + body["request"]["pipelineArgs"]["resources"]["minimumCpuCores"])
 				hddTest = hddTotal - (hddUsage + 10)  # each job uses at least 10GB of HDD by default
 				ssdTest = 1
 
-				for d in body["pipelineArgs"]["resources"]["disks"]:
+				for d in body["request"]["pipelineArgs"]["resources"]["disks"]:
 					if d["type"] == "PERSISTENT_SSD":
 						ssdTest = ssdTotal - (ssdUsage + d["sizeGb"])
 					elif d["type"] == "PERSISTENT_HDD":
