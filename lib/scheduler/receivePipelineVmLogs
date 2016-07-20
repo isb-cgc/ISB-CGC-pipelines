@@ -55,29 +55,29 @@ class PubsubMessageHandlers(object):
 				operationId = jobInfo.operation_id
 				PipelineLogger.writeStdout("Instance {i} (operation {o}) preempted!".format(i=instance, o=operationId))
 
-				children = [x[0] for x in pipelineDatabase.getChildJobs(jobInfo[0].job_id)]
+				children = [x[0] for x in pipelineDatabase.getChildJobs(jobInfo.job_id)]
 
-				if jobInfo[0].current_status != "CANCELLED":
-					pipelineDatabase.updateJob(jobInfo[0].job_id, keyName="job_id", setValues={"current_status": "PREEMPTED", "preemptions": 1})
+				if jobInfo.current_status != "CANCELLED":
+					pipelineDatabase.updateJob(jobInfo.job_id, keyName="job_id", setValues={"current_status": "PREEMPTED", "preemptions": 1})
 
 					if config.autorestart_preempted:
 						jobInfo = pipelineDatabase.getJobInfo(select=["request", "job_id"], where={"operation_id": operationId})
 						msg = {
-							"job_id": jobInfo[0].job_id,
-							"request": json.loads(jobInfo[0].request)
+							"job_id": jobInfo.job_id,
+							"request": json.loads(jobInfo.request)
 						}
 						pipelineQueue.publish(json.dumps(msg))
 					else:
 						if len(children) > 0:
 							PipelineLogger.writeStderr(
 								"Couldn't start downstream jobs for job {j} ({pipeline}-{tag}) : status is PREEMPTED (autorestart is FALSE)".format(
-									j=jobInfo[0].job_id, pipeline=jobInfo[0].pipeline_name, tag=jobInfo[0].tag))
+									j=jobInfo.job_id, pipeline=jobInfo.pipeline_name, tag=jobInfo.tag))
 
 						try:
 							msg = {
 								"current_status": "PREEMPTED"
 							}
-							pipelineChannel.publishToExchange('WATCH_EXCHANGE', "PIPELINE_JOB_{j}".format(j=jobInfo[0].job_id), msg)
+							pipelineChannel.publishToExchange('WATCH_EXCHANGE', "PIPELINE_JOB_{j}".format(j=jobInfo.job_id), msg)
 						except PipelineQueueError as e:
 							pass
 
@@ -85,13 +85,13 @@ class PubsubMessageHandlers(object):
 					if len(children) > 0:
 						PipelineLogger.writeStderr(
 							"Couldn't start downstream jobs for job {j} ({pipeline}-{tag}) : status is CANCELLED".format(
-								j=jobInfo[0].job_id, pipeline=jobInfo[0].pipeline_name, tag=jobInfo[0].tag))
+								j=jobInfo.job_id, pipeline=jobInfo.pipeline_name, tag=jobInfo.tag))
 
 					try:
 						msg = {
 							"current_status": "CANCELLED"
 						}
-						pipelineChannel.publishToExchange('WATCH_EXCHANGE', "PIPELINE_JOB_{j}".format(j=jobInfo[0].job_id), msg)
+						pipelineChannel.publishToExchange('WATCH_EXCHANGE', "PIPELINE_JOB_{j}".format(j=jobInfo.job_id), msg)
 					except PipelineQueueError as e:
 						pass
 
@@ -117,18 +117,18 @@ class PubsubMessageHandlers(object):
 
 					PipelineLogger.writeStdout("Instance {i} (operation {o}) completed!".format(i=instance, o=operationId))
 
-					children = [x[0] for x in pipelineDatabase.getChildJobs(jobInfo[0].job_id)]
+					children = [x[0] for x in pipelineDatabase.getChildJobs(jobInfo.job_id)]
 
 					if status["done"] and "error" not in status.keys():
-						PipelineLogger.writeStdout("PIPELINE SUCCEEDED (pipeline: {pipeline}, tag: {tag}, operation: {operation})".format(pipeline=jobInfo[0].pipeline_name, tag=jobInfo[0].tag, operation=status["name"]))
-						pipelineDatabase.updateJob(jobInfo[0].job_id, keyName="job_id", setValues={"current_status": "SUCCEEDED", "end_time": status["metadata"]["endTime"], "processing_time": processingTime})
+						PipelineLogger.writeStdout("PIPELINE SUCCEEDED (pipeline: {pipeline}, tag: {tag}, operation: {operation})".format(pipeline=jobInfo.pipeline_name, tag=jobInfo.tag, operation=status["name"]))
+						pipelineDatabase.updateJob(jobInfo.job_id, keyName="job_id", setValues={"current_status": "SUCCEEDED", "end_time": status["metadata"]["endTime"], "processing_time": processingTime})
 
 						if len(children) > 0:
 							for c in children:
 								parents = [x[0] for x in pipelineDatabase.getParentJobs(c)]
 								totalParents = len(parents)
 								succeededParents = 1
-								parents.remove(int(jobInfo[0].job_id))
+								parents.remove(int(jobInfo.job_id))
 
 								for p in parents:
 									status = pipelineDatabase.getJobInfo(select=["current_status"], where={"job_id": p})[0].current_status
@@ -150,30 +150,30 @@ class PubsubMessageHandlers(object):
 
 						else:
 							PipelineLogger.writeStdout(
-								"Job {jobid} has no child jobs to check!".format(jobid=jobInfo[0].job_id))
+								"Job {jobid} has no child jobs to check!".format(jobid=jobInfo.job_id))
 
 						try:
 							msg = {
 								"current_status": "SUCCEEDED"
 							}
-							pipelineChannel.publishToExchange('WATCH_EXCHANGE', "PIPELINE_JOB_{j}".format(j=jobInfo[0].job_id), msg)
+							pipelineChannel.publishToExchange('WATCH_EXCHANGE', "PIPELINE_JOB_{j}".format(j=jobInfo.job_id), msg)
 
 						except PipelineQueueError as e:
 							pass
 
 					elif "error" in status.keys():
-						if jobInfo[0].current_status != "CANCELLED":
-							PipelineLogger.writeStdout("PIPELINE FAILED ({job}): {reason}".format(job="{pipeline}-{tag}".format(pipeline=jobInfo[0].pipeline_name, tag=jobInfo[0].tag), reason=status["error"]["message"]))
-							pipelineDatabase.updateJob(jobInfo[0].job_id, keyName="job_id", setValues={"current_status": "FAILED", "end_time": status["metadata"]["endTime"], "processing_time": processingTime})
+						if jobInfo.current_status != "CANCELLED":
+							PipelineLogger.writeStdout("PIPELINE FAILED ({job}): {reason}".format(job="{pipeline}-{tag}".format(pipeline=jobInfo.pipeline_name, tag=jobInfo.tag), reason=status["error"]["message"]))
+							pipelineDatabase.updateJob(jobInfo.job_id, keyName="job_id", setValues={"current_status": "FAILED", "end_time": status["metadata"]["endTime"], "processing_time": processingTime})
 							if len(children) > 0:
 								PipelineLogger.writeStderr("Couldn't start downstream jobs for job {j} ({pipeline}-{tag}) : status is FAILED".format(
-										j=jobInfo[0].job_id, pipeline=jobInfo[0].pipeline_name, tag=jobInfo[0].tag))
+										j=jobInfo.job_id, pipeline=jobInfo.pipeline_name, tag=jobInfo.tag))
 
 							try:
 								msg = {
 									"current_status": "FAILED"
 								}
-								pipelineChannel.publishToExchange('WATCH_EXCHANGE', "PIPELINE_JOB_{j}".format(j=jobInfo[0].job_id), msg)
+								pipelineChannel.publishToExchange('WATCH_EXCHANGE', "PIPELINE_JOB_{j}".format(j=jobInfo.job_id), msg)
 
 							except PipelineQueueError as e:
 								pass
@@ -204,7 +204,7 @@ class PubsubMessageHandlers(object):
 						msg = {
 							"current_status": "RUNNING"
 						}
-						pipelineChannel.publishToExchange('WATCH_EXCHANGE', "PIPELINE_JOB_{j}".format(j=jobInfo[0].job_id), msg)
+						pipelineChannel.publishToExchange('WATCH_EXCHANGE', "PIPELINE_JOB_{j}".format(j=jobInfo.job_id), msg)
 
 					except PipelineQueueError as e:
 						pass
