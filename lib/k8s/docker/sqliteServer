@@ -1,0 +1,44 @@
+#!/usr/bin/env python
+import os
+import re
+import json
+import webapp2
+import argparse
+import sqlite3
+
+from StringIO import StringIO
+from paste import httpserver
+from pipelines.routes import *
+from pipelines.config import PipelineConfig
+from pipelines.db import PipelineDatabase
+
+
+CONFIG = PipelineConfig(path=os.environ["PIPELINES_CONFIG"])
+PIPELINES_DB = PipelineDatabase(CONFIG)
+
+class SqliteWriter(webapp2.RequestHandler):
+	def post(self):
+		pass
+
+
+class SqliteReader(webapp2.RequestHandler):
+	def get(self):
+		jobsList = PipelineScheduler.getJobsList(CONFIG, **kwargs)
+
+
+app = webapp2.WSGIApplication([
+	(r'/read$', SqliteReader),
+	(r'/write$', SqliteWriter),
+], debug=True)
+
+
+def main(host, port):
+	httpserver.serve(app, host=host, port=port)
+
+
+if __name__ == "__main__":
+	parser = argparse.ArgumentParser()
+	parser.add_argument("--host", required=False, default="0.0.0.0")
+	parser.add_argument("--port", required=True)
+	args = parser.parse_args()
+	main(args.host, args.port)

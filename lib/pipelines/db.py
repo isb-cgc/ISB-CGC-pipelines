@@ -24,6 +24,29 @@ class PipelineDatabase(object):
 	def closeConnection(self):
 		self._dbConn.close()
 
+	def insert(self, table, data):
+		cols = ','.join(data.keys())
+		vals = ','.join(['?' for x in data.itervalues()])
+		query = "INSERT INTO {table} ({cols}) VALUES ({vals})".format(cols=cols, vals=vals)
+
+		try:
+			self._pipelinesDb.execute(query, tuple(data.itervalues()))
+			self._dbConn.commit()
+
+		except sqlite3.Error as e:
+			raise PipelineDatabaseError("Couldn't insert record: {reason}".format(reason=e))
+
+		return self._pipelinesDb.lastrowid
+
+	def update(self, table, data, key, keyName="operation_id"):
+		values = ','.join(["{v} = ?".format(v=v) for v in data.keys()])
+		query = "UPDATE {table} SET {values} WHERE {key} = ?".format(table=table, values=values, key=keyName)
+
+		# TODO: start here!
+
+	def select(self, table, data, criteria):
+		pass
+
 	def insertJob(self, *args):
 		try:
 			self._pipelinesDb.execute("INSERT INTO jobs (operation_id, instance_name, pipeline_name, tag, current_status, preemptions, gcs_log_path, stdout_log, stderr_log, create_time, end_time, processing_time, request) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", tuple(args))

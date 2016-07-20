@@ -3,6 +3,8 @@ import os
 import re
 import json
 import webapp2
+import argparse
+import requests
 
 from StringIO import StringIO
 from paste import httpserver
@@ -17,27 +19,29 @@ from pipelines.scheduler import PipelineScheduler
 
 CONFIG = PipelineConfig(path=os.environ["PIPELINES_CONFIG"])
 
+SQLITE_READER_SERVICE_HOST = os.environ["SQLITE_READER_SERVICE_HOST"]
+SQLITE_READER_SERVICE_PORT = os.environ["SQLITE_READER_SERVICE_PORT"]
+
+SQLITE_WRITER_SERVICE_HOST = os.environ["SQLITE_WRITER_SERVICE_HOST"]
+SQLITE_WRITER_SERVICE_PORT = os.environ["SQLITE_WRITER_SERVICE_PORT"]
+
+CONFIG_WRITER_SERVICE_HOST = os.environ["CONFIG_WRITER_SERVICE_HOST"]
+
 
 class Jobs(webapp2.RequestHandler):
 	def get(self):
 		kwargs = {}
 
 		if re.match(JOBS_LIST_CREATE_EXP, self.request.path):
-			kwargs["pipeline"] = self.request.get("pipeline")
-			kwargs["tag"] = self.request.get("tag")
-			kwargs["status"] = self.request.get("status")
-			kwargs["createTimeAfter"] = self.request.get("createTimeAfter")
-			kwargs["limit"] = self.request.get("limit")
-
 			try:
-				jobsList = PipelineScheduler.getJobsList(CONFIG, **kwargs)
+				jobsList = PipelineService.sendRequest(SQLITE_READER_SERVICE_HOST, SQLITE_READER_SERVICE_PORT, "/read?{query}".format(query=self.request.query_string), protocol="tcp")
 
 			except ValueError as e:
 				self.response.set_status(400, e)
 
 			else:
 				resp = {
-					"jobsList": jobsList
+					"jobsList": jobsList.json()["data"]
 				}
 
 				self.response.out = StringIO(json.dumps(resp))
@@ -146,9 +150,13 @@ app = webapp2.WSGIApplication([
 ], debug=True)
 
 
-def main():
-	httpserver.serve(app, host='0.0.0.0', port='8080')
+def main(host, port):
+	httpserver.serve(app, host=host, port=port)
 
 
 if __name__ == "__main__":
-	main()
+	parser = argparse.ArgumentParser()
+	parser.add_argument("--host", required=False, default="0.0.0.0")
+	parser.add_argument("--port", required=False, default=80)
+	args = parser.parse_args()
+	main(args.host, args.port)
