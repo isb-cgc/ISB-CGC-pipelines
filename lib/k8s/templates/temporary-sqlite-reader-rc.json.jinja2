@@ -1,0 +1,49 @@
+{
+      "apiVersion": "v1",
+      "kind": "ReplicationController",
+      "metadata": {
+          "name": "temp-sqlite-reader"
+      },
+      "spec": {
+          "replicas": 1,
+          "selector": {
+              "role": "temp-sqlite-reader"
+          },
+          "template": {
+              "metadata": {
+                  "labels": {
+                      "role": "temp-sqlite-reader"
+                  }
+              },
+              "spec": {
+                  "containers": [
+                      {
+                          "name": "temp-sqlite-reader",
+                          "image": "b.gcr.io/isb-cgc-public-docker-images/isb-cgc-pipelines:latest",
+                          "ports": [
+                              {
+                                  "name": "temp-sqlite-reader",
+                                  "containerPort": 3308
+                              }
+                          ],
+                          "volumeMounts": [
+                              {
+                                  "name": "temp-data",
+                                  "mountPath": "/temp-data",
+                                  "readOnly": "true"
+                              }
+                          ]
+                      }
+                  ],
+                  "volumes": [
+                      {
+                          "name": "temp-data",
+                          "hostPath": {
+                              "path": "/tmp/isb-cgc-pipelines-temp-data"
+                          }
+                      }
+                  ]
+              }
+          }
+      }
+  }

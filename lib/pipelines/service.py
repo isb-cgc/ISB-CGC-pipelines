@@ -328,7 +328,7 @@ class PipelineService:
 		volumeUrl = API_ROOT + PERSISTENT_VOLUMES_URI.format(namespace=namespaceSpec["metadata"]["name"])
 
 		# pipeline front-end service
-		path = os.path.join(TEMPLATES_PATH, "pipeline-frontend-service.json.jinja2")
+		path = os.path.join(TEMPLATES_PATH, "pipeline-frontend-service.json.jinja2")  # TODO: rafactor paths
 		with open(path) as f:
 			pipelineFrontendServiceSpec = prepareTemplate(f)
 
