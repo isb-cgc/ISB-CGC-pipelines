@@ -41,7 +41,7 @@ class PubsubMessageHandlers(object):
 		if log["jsonPayload"]["event_subtype"] == "compute.instances.preempted":
 
 			try:
-				jobInfo = pipelineDbUtils.getJobInfo(select=["operation_id", "job_id", "pipeline_name", "tag", "create_time", "current_status"], where={"instance_name": instance})[0]
+				jobInfo = pipelineDbUtils.getJobInfo(select=["operation_id", "job_id", "pipeline_name", "tag", "create_time", "current_status", "request"], where={"instance_name": instance})[0]
 
 			except IndexError:
 				PipelineSchedulerUtils.writeStderr("Instance {i} preempted, but no record exists in jobs database".format(i=instance))
@@ -56,7 +56,6 @@ class PubsubMessageHandlers(object):
 					pipelineDbUtils.updateJob(jobInfo.job_id, keyName="job_id", setValues={"current_status": "PREEMPTED", "preemptions": 1})
 
 					if config.autorestart_preempted:
-						jobInfo = pipelineDbUtils.getJobInfo(select=["request", "job_id"], where={"operation_id": operationId})
 						msg = {
 							"job_id": jobInfo.job_id,
 							"request": json.loads(jobInfo.request)
