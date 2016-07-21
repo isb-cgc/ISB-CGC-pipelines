@@ -33,6 +33,21 @@ class PubsubMessageHandlers(object):
 
 			return processingTime
 
+		def getOperationStatus(operation):
+			status = None
+			while True:
+				try:
+					status = genomics.operations().get(name="operations/{op}".format(op=operation)).execute()
+				except HttpError as e:
+					if e.resp.status in [500, 502, 503, 504]:
+						continue
+					else:
+						PipelineSchedulerUtils.writeStderr("Couldn't get operation status : {reason}".format(reason=e))
+				else:
+					break
+
+			return status
+
 		pipelineDbUtils = PipelineDbUtils(config)
 		pipelineQueueUtils = PipelineQueueUtils('WAIT_Q')
 
@@ -86,57 +101,62 @@ class PubsubMessageHandlers(object):
 				currentStatus = jobInfo.current_status
 
 				if not currentStatus == "PREEMPTED":
-					status = genomics.operations().get(name="operations/{op}".format(op=operationId)).execute()
-					while not "endTime" in status["metadata"].keys():
-						sleep(5)
-						status = genomics.operations().get(name="operations/{op}".format(op=operationId)).execute()
+					status = getOperationStatus(operationId)
+					if status is not None:
+						while not "endTime" in status["metadata"].keys():
+							sleep(5)
+							status = getOperationStatus(operationId)
 
-					processingTime = getProcessingTime(status)
+						if status is not None:
+							processingTime = getProcessingTime(status)
 
-					PipelineSchedulerUtils.writeStdout("Instance {i} (operation {o}) completed!".format(i=instance, o=operationId))
+							PipelineSchedulerUtils.writeStdout("Instance {i} (operation {o}) completed!".format(i=instance, o=operationId))
 
-					children = [x[0] for x in pipelineDbUtils.getChildJobs(jobInfo.job_id)]
+							children = [x[0] for x in pipelineDbUtils.getChildJobs(jobInfo.job_id)]
 
-					if status["done"] and "error" not in status.keys():
-						PipelineSchedulerUtils.writeStdout("PIPELINE SUCCEEDED (pipeline: {pipeline}, tag: {tag}, operation: {operation})".format(pipeline=jobInfo.pipeline_name, tag=jobInfo.tag, operation=status["name"]))
-						pipelineDbUtils.updateJob(jobInfo.job_id, keyName="job_id", setValues={"current_status": "SUCCEEDED", "end_time": status["metadata"]["endTime"], "processing_time": processingTime})
+							if status["done"] and "error" not in status.keys():
+								PipelineSchedulerUtils.writeStdout("PIPELINE SUCCEEDED (pipeline: {pipeline}, tag: {tag}, operation: {operation})".format(pipeline=jobInfo.pipeline_name, tag=jobInfo.tag, operation=status["name"]))
+								pipelineDbUtils.updateJob(jobInfo.job_id, keyName="job_id", setValues={"current_status": "SUCCEEDED", "end_time": status["metadata"]["endTime"], "processing_time": processingTime})
 
-						if len(children) > 0:
-							for c in children:
-								parents = [x[0] for x in pipelineDbUtils.getParentJobs(c)]
-								totalParents = len(parents)
-								succeededParents = 1
-								parents.remove(int(jobInfo.job_id))
+								if len(children) > 0:
+									for c in children:
+										parents = [x[0] for x in pipelineDbUtils.getParentJobs(c)]
+										totalParents = len(parents)
+										succeededParents = 1
+										parents.remove(int(jobInfo.job_id))
 
-								for p in parents:
-									status = pipelineDbUtils.getJobInfo(select=["current_status"], where={"job_id": p})[0].current_status
+										for p in parents:
+											status = pipelineDbUtils.getJobInfo(select=["current_status"], where={"job_id": p})[0].current_status
 
-									if status == "SUCCEEDED":
-										succeededParents += 1
+											if status == "SUCCEEDED":
+												succeededParents += 1
 
-									else:
-										break
+											else:
+												break
 
-								if totalParents == succeededParents:
-									childRequest = json.loads(pipelineDbUtils.getJobInfo(select=["request"], where={"job_id": c})[0].request)
+										if totalParents == succeededParents:
+											childRequest = json.loads(pipelineDbUtils.getJobInfo(select=["request"], where={"job_id": c})[0].request)
 
-									msg = {
-										"job_id": c,
-										"request": childRequest
-									}
-									pipelineQueueUtils.publish(json.dumps(msg))
+											msg = {
+												"job_id": c,
+												"request": childRequest
+											}
+											pipelineQueueUtils.publish(json.dumps(msg))
 
-						else:
-							PipelineSchedulerUtils.writeStdout(
-								"Job {jobid} has no child jobs to check!".format(jobid=jobInfo.job_id))
+								else:
+									PipelineSchedulerUtils.writeStdout(
+										"Job {jobid} has no child jobs to check!".format(jobid=jobInfo.job_id))
 
-					elif "error" in status.keys():
-						if jobInfo.current_status != "CANCELLED":
-							PipelineSchedulerUtils.writeStdout("PIPELINE FAILED ({job}): {reason}".format(job="{pipeline}-{tag}".format(pipeline=jobInfo.pipeline_name, tag=jobInfo.tag), reason=status["error"]["message"]))
-							pipelineDbUtils.updateJob(jobInfo.job_id, keyName="job_id", setValues={"current_status": "FAILED", "end_time": status["metadata"]["endTime"], "processing_time": processingTime})
-							if len(children) > 0:
-								PipelineSchedulerUtils.writeStderr("Couldn't start downstream jobs for job {j} ({pipeline}-{tag}) : status is FAILED".format(
-										j=jobInfo.job_id, pipeline=jobInfo.pipeline_name, tag=jobInfo.tag))
+							elif "error" in status.keys():
+								if jobInfo.current_status != "CANCELLED":
+									PipelineSchedulerUtils.writeStdout("PIPELINE FAILED ({job}): {reason}".format(job="{pipeline}-{tag}".format(pipeline=jobInfo.pipeline_name, tag=jobInfo.tag), reason=status["error"]["message"]))
+									pipelineDbUtils.updateJob(jobInfo.job_id, keyName="job_id", setValues={"current_status": "FAILED", "end_time": status["metadata"]["endTime"], "processing_time": processingTime})
+									if len(children) > 0:
+										PipelineSchedulerUtils.writeStderr("Couldn't start downstream jobs for job {j} ({pipeline}-{tag}) : status is FAILED".format(
+												j=jobInfo.job_id, pipeline=jobInfo.pipeline_name, tag=jobInfo.tag))
+
+					if status is None:
+						pipelineDbUtils.updateJob(jobInfo.job_id, setValues={"current_status": "UNKNOWN"}, keyName="job_id")
 
 		elif log["jsonPayload"]["event_subtype"] == "compute.instances.insert":
 			zone = log["resource"]["labels"]["zone"]
@@ -179,7 +199,7 @@ def main(args, config):
 		try:
 			resp = pubsub.projects().subscriptions().pull(subscription=subscription, body=body).execute()
 		except HttpError as e:
-				if e.resp.status == 504:
+				if e.resp.status in [500, 502, 503, 504]:
 					continue
 				else:
 					PipelineSchedulerUtils.writeStderr("Couldn't pull from subscription {s} : {reason}".format(s=args.subscription, reason=e))
