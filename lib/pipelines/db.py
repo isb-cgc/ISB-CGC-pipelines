@@ -8,6 +8,11 @@ class PipelineDatabaseError(Exception):
 		self.msg = msg
 
 
+class DatabaseRecord(object):
+	def __init__(self, innerDict):
+		self.__dict__.update(innerDict)
+
+
 class PipelineDatabase(object):
 	def __init__(self, config):
 		if config.db == "mysql":
@@ -24,28 +29,74 @@ class PipelineDatabase(object):
 	def closeConnection(self):
 		self._dbConn.close()
 
-	def insert(self, table, data):
-		cols = ','.join(data.keys())
-		vals = ','.join(['?' for x in data.itervalues()])
-		query = "INSERT INTO {table} ({cols}) VALUES ({vals})".format(cols=cols, vals=vals)
+	def update(self, table, **data):
+		if "job_id" not in data.keys():
+			# if the record doesn't exist, insert it
+			cols = ','.join(data.keys())
+			vals = ','.join(['?' for x in data.itervalues()])
+			query = "INSERT INTO {table} ({cols}) VALUES ({vals})".format(table=table, cols=cols, vals=vals)
 
-		try:
-			self._pipelinesDb.execute(query, tuple(data.itervalues()))
-			self._dbConn.commit()
+			try:
+				self._pipelinesDb.execute(query, tuple(data.itervalues()))
+				self._dbConn.commit()
 
-		except sqlite3.Error as e:
-			raise PipelineDatabaseError("Couldn't insert record: {reason}".format(reason=e))
+			except sqlite3.Error as e:
+				raise PipelineDatabaseError("Couldn't insert record: {reason}".format(reason=e))
 
-		return self._pipelinesDb.lastrowid
+			return self._pipelinesDb.lastrowid
 
-	def update(self, table, data, key, keyName="operation_id"):
-		values = ','.join(["{v} = ?".format(v=v) for v in data.keys()])
-		query = "UPDATE {table} SET {values} WHERE {key} = ?".format(table=table, values=values, key=keyName)
+		else:
+			# otherwise, update the record
+			values = ','.join(["{v} = ?".format(v=v) for v in data.keys()])
+			query = "UPDATE {table} SET {values} WHERE job_id = ?".format(table=table, values=values)
 
-		# TODO: start here!
+			try:
+				self._pipelinesDb.execute(query, tuple(data.itervalues()))
 
-	def select(self, table, data, criteria):
-		pass
+			except sqlite3.Error as e:
+				raise PipelineDatabaseError("Couldn't update record: {reason}".format(reason=e))
+
+			return data["job_id"]
+
+	def select(self, table, *data, **criteria):
+		operations = {
+			"union": "OR",
+			"intersection": "AND",
+			"complement": "NOT"
+		}
+
+		if "operation" in criteria.keys():
+			operation = operations[criteria["operation"]]
+		else:
+			operation = "AND"
+
+		if len(data) > 0:
+			dataString = ', '.join(data)
+		else:
+			dataString = "*"
+
+		criteriaString = " {op} ".format(op=operation).join(["{k} = ?" for k in criteria.iterkeys()])
+
+		query = "SELECT {data} from {table} WHERE {criteria}".format(data=dataString, table=table, criteria=criteriaString)
+		records = self._pipelinesDb.execute(query, tuple(criteria.itervalues())).fetchall()
+
+		recordsDict = {
+			"records": []
+		}
+
+		for r in records:
+			newDict = {}
+			if select is None:
+				select = ["job_id", "operation_id", "pipeline_name", "tag", "current_status", "preemptions",
+				          "gcs_log_path", "stdout_log", "stderr_log", "create_time", "end_time", "processing_time",
+				          "request"]
+
+			for i, k in enumerate(select):
+				newDict[k] = r[i]
+
+			recordsDict["records"].append(newDict)
+
+		return recordsDict
 
 	def insertJob(self, *args):
 		try:

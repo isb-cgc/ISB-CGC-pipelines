@@ -12,16 +12,30 @@ from googleapiclient.errors import HttpError
 from oauth2client import client as oauth2client
 
 from pipelines.config import PipelineConfig
-from pipelines.db import PipelineDatabase
+from pipelines.db import DatabaseRecord
 from pipelines.queue import PipelineQueue, PipelineChannel, PipelineQueueError
 from pipelines.logger import PipelineLogger
+from pipelines.routes import *
+from pipelines.service import PipelineService, PipelineServiceError
 
 PUBSUB_SCOPES = ['https://www.googleapis.com/auth/pubsub']
+CONFIG = PipelineConfig(path=os.environ["PIPELINES_CONFIG"])
+
+RABBITMQ_SERVICE_HOST = os.environ["RABBITMQ_SERVICE_HOST"]
+RABBITMQ_SERVICE_PORT = os.environ["RABBITMQ_SERVICE_PORT"]
+
+SQLITE_READER_SERVICE_HOST = os.environ["SQLITE_READER_SERVICE_HOST"]
+SQLITE_READER_SERVICE_PORT = os.environ["SQLITE_READER_SERVICE_PORT"]
+
+SQLITE_WRITER_SERVICE_HOST = os.environ["SQLITE_WRITER_SERVICE_HOST"]
+SQLITE_WRITER_SERVICE_PORT = os.environ["SQLITE_WRITER_SERVICE_PORT"]
+
+CONFIG_WRITER_SERVICE_HOST = os.environ["CONFIG_WRITER_SERVICE_HOST"]
 
 
 class PubsubMessageHandlers(object):
 	@staticmethod
-	def pipelineVmLogs(log, compute, genomics, config):
+	def pipelineVmLogs(log, compute, genomics):
 		def getProcessingTime(status):
 			# get the total processing time of the job
 			processingStart = None
@@ -37,31 +51,38 @@ class PubsubMessageHandlers(object):
 
 			return processingTime
 
-		pipelineDatabase = PipelineDatabase(config)
-		pipelineQueue = PipelineQueue('WAIT_Q', host=os.environ["RABBITMQ_SERVICE_HOST"], port=os.environ["RABBITMQ_SERVICE_PORT"])
-		pipelineChannel = PipelineChannel(host=os.environ["RABBITMQ_SERVICE_HOST"], port=os.environ["RABBITMQ_SERVICE_PORT"])
+		#pipelineDatabase = PipelineDatabase(CONFIG)
+		pipelineQueue = PipelineQueue('WAIT_Q', host=RABBITMQ_SERVICE_HOST, port=RABBITMQ_SERVICE_PORT)
+		pipelineChannel = PipelineChannel(host=RABBITMQ_SERVICE_HOST, port=RABBITMQ_SERVICE_PORT)
 
 		instance = log["jsonPayload"]["resource"]["name"]
 
 		if log["jsonPayload"]["event_subtype"] == "compute.instances.preempted":
-
+			query = '&'.join(["select=operation_id,job_id,pipeline_name,tag,create_time,current_status,request", "instance_name={i}".format(i=instance)])
+			uri = "{route}?{query}"
 			try:
-				jobInfo = pipelineDatabase.getJobInfo(select=["operation_id", "job_id", "pipeline_name", "tag", "create_time", "current_status"], where={"instance_name": instance})[0]
+				resp = PipelineService.sendRequest(SQLITE_READER_SERVICE_HOST, SQLITE_READER_SERVICE_PORT, uri.format(route=SQLITE_READ_JOBS, query=query))
 
-			except IndexError:
-				PipelineLogger.writeStderr("Instance {i} preempted, but no record exists in jobs database".format(i=instance))
+			except PipelineServiceError as e:
+				PipelineLogger.writeStderr("Instance {i} preempted, but no record exists in jobs database: {msg}".format(i=instance, msg=e))
 
 			else:
+				jobInfo = DatabaseRecord(resp["records"][0])
 				operationId = jobInfo.operation_id
 				PipelineLogger.writeStdout("Instance {i} (operation {o}) preempted!".format(i=instance, o=operationId))
 
-				children = [x[0] for x in pipelineDatabase.getChildJobs(jobInfo.job_id)]
+				query = '&'.join([])  # TODO: fill in
+				try:
+					resp = PipelineService.sendRequest(SQLITE_READER_SERVICE_HOST, SQLITE_READER_SERVICE_PORT, uri.format(route=SQLITE_READ_JOB_DEPS, query=query))
+					children = json.loads(resp)[""]  # TODO: specify
+					#children = [x[0] for x in pipelineDatabase.getChildJobs(jobInfo.job_id)]
 
 				if jobInfo.current_status != "CANCELLED":
-					pipelineDatabase.updateJob(jobInfo.job_id, keyName="job_id", setValues={"current_status": "PREEMPTED", "preemptions": 1})
+					query = '&'.join([]) # TODO: fill in
+					resp = PipelineService.sendRequest(SQLITE_WRITER_SERVICE_HOST, SQLITE_WRITER_SERVICE_PORT, uri.format(route=SQLITE_UPDATE_JOBS, query=query))
+					#pipelineDatabase.updateJob(jobInfo.job_id, keyName="job_id", setValues={"current_status": "PREEMPTED", "preemptions": 1})
 
-					if config.autorestart_preempted:
-						jobInfo = pipelineDatabase.getJobInfo(select=["request", "job_id"], where={"operation_id": operationId})
+					if CONFIG.autorestart_preempted:
 						msg = {
 							"job_id": jobInfo.job_id,
 							"request": json.loads(jobInfo.request)
@@ -181,13 +202,18 @@ class PubsubMessageHandlers(object):
 		elif log["jsonPayload"]["event_subtype"] == "compute.instances.insert":
 			zone = log["resource"]["labels"]["zone"]
 			try:
-				instanceInfo = compute.instances().get(project=config.project_id, zone=zone, instance=instance).execute()
+				instanceInfo = compute.instances().get(project=CONFIG.project_id, zone=zone, instance=instance).execute()
 
 			except HttpError as e:
 				PipelineLogger.writeStderr("Couldn't get info for instance {i} : {reason}".format(i=instance, reason=e))
 
 			else:
 				operationId = instanceInfo["description"].partition("Operation: ")[-1]
+				try:
+					jobId = pipelineDatabase.getJobInfo(select=["job_id"], where={"operation_id": operationId})[0].job_id
+				except PipelineDatabaseError as e:
+					pass # TODO: handle
+
 				PipelineLogger.writeStdout("Instance {i} (operation {o}) started!".format(i=instance, o=operationId))
 				pipelineDatabase.updateJob(operationId, keyName="operation_id", setValues={"instance_name": instance})
 
@@ -210,7 +236,7 @@ class PubsubMessageHandlers(object):
 						pass
 							
 
-def main(args, config):
+def main(args, CONFIG):
 	credentials = oauth2client.GoogleCredentials.get_application_default()
 
 	if credentials.create_scoped_required():
@@ -223,7 +249,7 @@ def main(args, config):
 	compute = discovery.build('compute', 'v1', http=http)
 	genomics = discovery.build('genomics', 'v1alpha2', http=http)
 
-	subscription = 'projects/{project}/subscriptions/{subscription}'.format(project=config.project_id, subscription=args.subscription)
+	subscription = 'projects/{project}/subscriptions/{subscription}'.format(project=CONFIG.project_id, subscription=args.subscription)
 
 	# Create a POST body for the Pub/Sub request
 	body = {
@@ -251,7 +277,7 @@ def main(args, config):
 					if pubsubMessage:
 						log = json.loads(base64.b64decode(str(pubsubMessage.get('data'))))
 						PipelineLogger.writeStdout("Received message: {msg}".format(msg=base64.b64decode(str(pubsubMessage.get('data')))))
-						PubsubMessageHandlers.pipelineVmLogs(log, compute, genomics, config)
+						PubsubMessageHandlers.pipelineVmLogs(log, compute, genomics, CONFIG)
 						ackIds.append(receivedMessage.get('ackId'))
 
 				ackBody = {'ackIds': ackIds}
@@ -265,11 +291,11 @@ if __name__ == "__main__":
 	parser.add_argument("--subscription")
 
 	args = parser.parse_args()
-	config = PipelineConfig()
+	CONFIG = PipelineConfig()
 
-	t = threading.Thread(target=config.watch)
+	t = threading.Thread(target=CONFIG.watch)
 	t.daemon = True
 	t.start()
 
-	main(args, config)
+	main(args, CONFIG)
 	t.join()

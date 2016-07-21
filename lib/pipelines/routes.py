@@ -9,3 +9,11 @@ DATADISKS_LIST_CREATE_EXP = r'/datadisks$'
 DATADISK_DESCRIBE_DELETE_EXP = r'/datadisks/([a-z]*([0-9]*|[a-z]*|[A-Z-]*))*$'  # TODO: check that expression is correct
 LOG_STDOUT_EXP = r'/log/(\d+)/stdout$'
 LOG_STDERR_EXP = r'/log/(\d+)/stderr$'
+
+SQLITE_READ_JOBS = r'/read/jobs'
+SQLITE_READ_JOB_DEPS = r'/read/job_dependencies'
+SQLITE_READ_JOB_ARCHIVE = r'/read/job_archive'
+SQLITE_INSERT_JOBS = r'/insert/jobs'
+SQLITE_UPDATE_JOBS = r'/update/jobs'
+SQLITE_INSERT_JOB_DEPS = r'/insert/job_dependencies'
+SQLITE_INSERT_JOB_ARCHIVE = r'/insert/job_archive'

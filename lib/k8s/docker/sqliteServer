@@ -4,31 +4,90 @@ import re
 import json
 import webapp2
 import argparse
-import sqlite3
 
 from StringIO import StringIO
 from paste import httpserver
 from pipelines.routes import *
-from pipelines.config import PipelineConfig
-from pipelines.db import PipelineDatabase
+from pipelines.config import PipelineConfig, PipelineConfigError
+from pipelines.db import PipelineDatabase, PipelineDatabaseError
+from pipelines.scheduler import PipelineScheduler, PipelineSchedulerError
 
 
 CONFIG = PipelineConfig(path=os.environ["PIPELINES_CONFIG"])
 PIPELINES_DB = PipelineDatabase(CONFIG)
 
+
+class SqliteServerError(Exception):
+	def __init__(self, msg):
+		super(SqliteServerError, self).__init__()
+		self.msg = msg
+
+
 class SqliteWriter(webapp2.RequestHandler):
 	def post(self):
-		pass
+		data = json.loads(self.request.body)
+
+		if re.match(SQLITE_INSERT_JOBS, self.request.path):
+			# request body:
+			# - one item for each column in the record
+			try:
+				jobId = PIPELINES_DB.insertJob(**data)  # TODO: kwargs in insertJob function
+
+			except PipelineDatabaseError as e:
+				pass  # TODO: handle
+
+			else:
+				resp = {
+					"job_id": jobId
+				}
+
+				self.response.out = StringIO(json.dumps(resp))
+				self.response.set_status(200)
+
+		elif re.match(SQLITE_UPDATE_JOBS, self.request.path):
+			PIPELINES_DB.updateJob(jobInfo.job_id, keyName="job_id", setValues={"current_status": "PREEMPTED", "preemptions": 1})  # TODO: start here!
+
+		elif re.match(SQLITE_INSERT_JOB_DEPS, self.request.path):
+			pass
+
+		elif re.match(SQLITE_INSERT_JOB_ARCHIVE, self.request.path):
+			pass
+
+		else:
+			self.response.set_status(404, "Resource {r} not found".format(r=self.request.path))
 
 
 class SqliteReader(webapp2.RequestHandler):
 	def get(self):
-		jobsList = PipelineScheduler.getJobsList(CONFIG, **kwargs)
+		if re.match(SQLITE_READ_JOBS, self.request.path):
+			pass
+
+		elif re.match(SQLITE_READ_JOB_DEPS, self.request.path):
+			pass
+
+		elif re.match(SQLITE_READ_JOB_ARCHIVE, self.request.path):
+			pass
+
+		else:
+			self.response.set_status(404, "Resource {r} not found".format(r=self.request.path))
+
+		#criteria = {x.split('=')[0]: x.split('=')[1] for x in self.request.query_string.split('&')}
+		#data = ','.split(criteria.pop("select"))
+
+		#resp = PIPELINES_DB.select(table, data, criteria)
+
+		self.response.out = StringIO(json.dumps(resp))
+		self.response.set_status(200)
 
 
 app = webapp2.WSGIApplication([
-	(r'/read$', SqliteReader),
-	(r'/write$', SqliteWriter),
+	(SQLITE_READ_JOBS, SqliteReader),
+	(SQLITE_READ_JOB_DEPS, SqliteReader),
+	(SQLITE_READ_JOB_ARCHIVE, SqliteReader),
+	(SQLITE_INSERT_JOBS, SqliteWriter),
+	(SQLITE_UPDATE_JOBS, SqliteWriter),
+	(SQLITE_INSERT_JOB_DEPS, SqliteWriter),
+	(SQLITE_INSERT_JOB_ARCHIVE, SqliteWriter),
 ], debug=True)
 
 

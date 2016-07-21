@@ -34,7 +34,7 @@ class Jobs(webapp2.RequestHandler):
 
 		if re.match(JOBS_LIST_CREATE_EXP, self.request.path):
 			try:
-				jobsList = PipelineService.sendRequest(SQLITE_READER_SERVICE_HOST, SQLITE_READER_SERVICE_PORT, "/read?{query}".format(query=self.request.query_string), protocol="tcp")
+				jobsList = PipelineService.sendRequest(SQLITE_READER_SERVICE_HOST, SQLITE_READER_SERVICE_PORT, "/read/jobs?{query}".format(query=self.request.query_string), protocol="tcp")
 
 			except ValueError as e:
 				self.response.set_status(400, e)
