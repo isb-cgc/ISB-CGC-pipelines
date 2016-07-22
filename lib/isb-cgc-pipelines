@@ -17,9 +17,6 @@ if __name__ == "__main__":
 	parser = argparse.ArgumentParser(description="")
 	subparsers = parser.add_subparsers(dest="subcommand")
 
-	extensions = subparsers.add_parser("extensions")
-	extensions.add_argument("extensionOperation", choices=["enable", "disable", "list"])
-
 	jobs = subparsers.add_parser("jobs")
 	jobs.add_argument("jobsOperation", choices=["describe", "list", "submit", "edit", "restart", "cancel"])
 
@@ -37,43 +34,7 @@ if __name__ == "__main__":
 	
 	args, unknown = parser.parse_known_args()
 
-	if args.subcommand == "extensions":
-		parser = argparse.ArgumentParser()
-
-		if args.extensionsOperation == "enable":
-			enableGrp = parser.add_mutually_exclusive_group(required=True)
-			enableGrp.add_argument("--k8s")
-			enableGrp.add_argument("--supervisor")
-
-			# ENABLE MORE EXTENSIONS HERE
-
-			args = parser.parse_args(args=unknown)
-
-			if args.k8s:  # TODO: implement
-				pass
-
-			if args.supervisor:  # TODO: implement
-				pass
-
-		elif args.extensionsOperation == "disable":
-			disableGrp = parser.add_mutually_exclusive_group(required=True)
-			disableGrp.add_argument("--k8s")
-			disableGrp.add_argument("--supervisor")
-
-			# DISABLE MORE EXTENSIONS HERE
-
-			args = parser.parse_args(args=unknown)
-
-			if args.k8s:  # TODO: implement
-				pass
-
-			if args.supervisor:  # TODO: implement
-				pass
-
-		elif args.extensionsOperation == "list":  # TODO: implement
-			pass
-
-	elif args.subcommand == "jobs":
+	if args.subcommand == "jobs":
 		parser = argparse.ArgumentParser()
 
 		if args.jobsOperation == "submit":
@@ -116,8 +77,6 @@ if __name__ == "__main__":
 			parser.add_argument("--syncOutputs")
 			parser.add_argument("jobId", required=True)
 
-			# TODO: error checking
-
 			args = parser.parse_args(args=unknown)
 			resp = PipelineService.sendRequest(config.service_endpoint, config.service_port, JOB_EDIT_EXP, data=vars(args))
 			print resp.get("msg")
@@ -132,7 +91,7 @@ if __name__ == "__main__":
 			args = parser.parse_args(args=unknown)
 
 			uri = "{route}?{query}"
-			query = []
+			query = ["select={select}".format(select=','.join(["job_id", "operation_id", "pipeline_name", "tag", "current_status", "create_time", "preemptions"]))]
 
 			if args.pipeline:
 				query.append("pipeline={p}".format(p=args.pipeline))
