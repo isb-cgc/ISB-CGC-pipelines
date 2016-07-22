@@ -189,6 +189,9 @@ class PubsubMessageHandlers(object):
 									PipelineLogger.writeStdout(
 										"Job {jobid} has no child jobs to check!".format(jobid=jobInfo.job_id))
 
+									# get the disks associated with the job
+									# for each disk, if cleanup is set to true then delete the disk and remove the record from the database
+
 								try:
 									msg = {
 										"current_status": "SUCCEEDED"

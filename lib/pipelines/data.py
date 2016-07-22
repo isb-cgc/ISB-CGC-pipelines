@@ -98,6 +98,9 @@ class GDCDataUtils(object):
 		elif fileUuid is not None:
 			fileSize = GDCDataUtils.getFilesize(fileUuid, tokenFile)
 
+		elif inputFileSize is not None:
+			filesize = inputFileSize
+
 		else:
 			raise DataUtilsError("Couldn't determine disk size! Please provide a path to an existing file in GCS or a file uuid from the GDC.")
 

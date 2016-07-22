@@ -11,6 +11,7 @@ class DataDiskError(Exception):
 		super(DataDiskError, self).__init__()
 		self.msg = msg
 
+
 class DataDisk(object):
 	def __init__(self, name, config, diskSize, diskType="PERSISTENT_SSD", zone=None, inputs=None):
 		# submit a request to the gce api for a new disk with the given parameters
@@ -54,4 +55,6 @@ class DataDisk(object):
 					if result['status'] == 'DONE':
 						break
 
+
+			# add the disk to the data_disks database
 

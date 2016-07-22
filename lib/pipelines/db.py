@@ -252,6 +252,14 @@ class PipelineDatabase(object):
 			except sqlite3.Error as e:
 				raise PipelineDatabaseError("Couldn't create job dependency table: {reason}".format(reason=e))
 
+		if len(self._pipelinesDb.execute('SELECT name FROM sqlite_master WHERE type="table" AND name="data_disks"').fetchall()) == 0:
+			try:
+				self._pipelinesDb.execute("CREATE TABLE data_disks (row_id INTEGER PRIMARY KEY AUTOINCREMENT, job_id INTEGER, disk_name VARCHAR(128), disk_zone VARCHAR(128))")
+				self._dbConn.commit()
+
+			except sqlite3.Error as e:
+				raise PipelineDatabaseError("Couldn't create data disk table: {reason}".format(reason=e))
+
 		if len(self._pipelinesDb.execute('SELECT name FROM sqlite_master WHERE type="table" AND name="job_archive"').fetchall()) == 0:
 			query = (
 				'CREATE TABLE job_archive (row_id INTEGER PRIMARY KEY AUTOINCREMENT, '
