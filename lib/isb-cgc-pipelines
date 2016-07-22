@@ -108,7 +108,7 @@ if __name__ == "__main__":
 			elif args.limit:
 				query.append("limit={l}".format(l=args.limit))
 
-			resp = PipelineService.sendRequest(config.service_endpoint, config.service_port, uri.format(route=JOBS_LIST_CREATE_EXP, query='&'.join(query)))
+			resp = PipelineService.sendRequest(config.service_endpoint, config.service_port, uri.format(route="/jobs", query='&'.join(query)))
 			jobs = json.loads(resp.get("jobsList"))
 
 			for j in jobs:
@@ -119,7 +119,7 @@ if __name__ == "__main__":
 
 			args = parser.parse_args(args=unknown)
 			query = "jobId={j}".format(j=args.jobId)
-			uri = "{route}?{query}".format(route=JOB_DESCRIBE_EXP, query=query)
+			uri = "{route}?{query}".format(route="/jobs", query=query)
 			resp = PipelineService.sendRequest(config.service_endpoint, config.service_port, uri)
 
 			# TODO: pretty print response

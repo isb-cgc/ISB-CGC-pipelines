@@ -1,0 +1,108 @@
+#!/usr/bin/env python
+import os
+import re
+import json
+import webapp2
+import argparse
+
+from StringIO import StringIO
+from paste import httpserver
+from pipelines.routes import *
+from pipelines.config import PipelineConfig, PipelineConfigError
+from pipelines.db import PipelineDatabase, PipelineDatabaseError
+from pipelines.scheduler import PipelineScheduler, PipelineSchedulerError
+
+
+CONFIG = PipelineConfig(path=os.environ["PIPELINES_CONFIG"])
+
+
+class ConfigServerError(Exception):
+	def __init__(self, msg):
+		super(ConfigServerError, self).__init__()
+
+
+class ConfigWriter(webapp2.RequestHandler):
+	def post(self):
+		data = json.loads(self.request.body)
+		resp = None
+		status = None
+
+		if re.match(CONFIG_INIT, self.request.path):
+			# request format:
+			#
+			# {
+			#   <key-value pairs for each column in the table>
+			# }
+			#
+			table = os.path.basename(self.request.path)
+			try:
+				id = PIPELINES_DB.insert(table, **data)
+
+			except PipelineDatabaseError as e:
+				resp = {
+					"msg": e
+				}
+				status = 400
+
+			else:
+				resp = {
+					"id": id
+				}
+
+		elif re.match(CONFIG_UPDATE, self.request.path):
+			table = os.path.basename(self.request.path)
+			# request format:
+			# {
+			#   "updates": { ... < column values to update > ... },
+			#   "criteria": {
+			#      "operation": "AND"|"OR"|"NOT",
+			#      "values": [
+			#          {
+			#             "operation": ...,
+			#             "values": [ ... ]
+			#          } | {
+			#          {
+			#            "key": <column-name>,
+			#            "value": <column-value>
+			#          }, ...
+			#      ]
+			#   }
+			# }
+			#
+			try:
+				PIPELINES_DB.update(table, data["updates"], data["criteria"])
+
+			except PipelineDatabaseError as e:
+				resp = {
+					"msg": e
+				}
+				status = 400
+
+			else:
+				status = 204
+
+		else:
+			self.response.set_status(404, "Resource {r} not found".format(r=self.request.path))
+
+		if resp is not None:
+			self.response.out = StringIO(json.dumps(resp))
+
+		self.response.set_status(status)
+
+
+app = webapp2.WSGIApplication([
+	(CONFIG_INIT, ConfigWriter),
+	(CONFIG_UPDATE, ConfigWriter),
+], debug=True)
+
+
+def main(host, port):
+	httpserver.serve(app, host=host, port=port)
+
+
+if __name__ == "__main__":
+	parser = argparse.ArgumentParser()
+	parser.add_argument("--host", required=False, default="0.0.0.0")
+	parser.add_argument("--port", required=True)
+	args = parser.parse_args()
+	main(args.host, args.port)

@@ -47,12 +47,6 @@ class PipelineConfig(SafeConfigParser, object):
 				"default": "default",
 				"message": "Enter a valid service account email (leave blank to use the default service account): "
 			},
-			"pipelines_home": {  # TODO: get rid of this parameter (no longer need it)
-				"section": "pipelines",
-				"required": True,
-				"default": os.path.join(os.path.dirname(self.path), "pipelines"),
-				"message": "Enter a path for the ISB-CGC Pipelines job directory (leave blank to use ~/.isb-cgc-pipelines/pipelines by default): "
-			},
 			"max_running_jobs": {
 				"section": "pipelines",
 				"required": True,
@@ -64,12 +58,6 @@ class PipelineConfig(SafeConfigParser, object):
 				"required": True,
 				"default": False,
 				"message": "Would you like to automatically restart preempted jobs? (Only relevant when submitting jobs with the '--preemptible' flag; default is No) Y/N : "
-			},
-			"db": {
-				"section": "pipelines",
-				"required": True,
-				"default": "sqlite",
-				"message": "Enter the type of database to use (leave blank to use the default 'sqlite'): "
 			}
 		}
 

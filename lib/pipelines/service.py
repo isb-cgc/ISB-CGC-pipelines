@@ -1,22 +1,20 @@
 import os
-import re
 import json
 import string
 import requests
+import httplib2
 import subprocess
 import futures
-from time import time, sleep
+from time import sleep
 from random import SystemRandom
 from datetime import datetime
 from jinja2 import Template
+from googleapiclient import discovery
+from oauth2client.client import GoogleCredentials
 from googleapiclient.errors import HttpError
 from pipelines.paths import *
 from pipelines.schema import PipelineSchema
 from pipelines.builder import PipelineBuilder, PipelineSchemaValidationError, PipelineSubmitError
-from pipelines.db import PipelineDatabase, PipelineDatabaseError
-from pipelines.queue import PipelineQueue, PipelineExchange
-from pipelines.disks import DataDisk, DataDiskError
-from ConfigParser import SafeConfigParser
 
 
 # Kubernetes API URIs
@@ -33,6 +31,68 @@ SESSION = requests.Session()
 API_HEADERS = {
 	"Content-type": "application/json"
 }
+
+
+class DataDiskError(Exception):
+	def __init__(self, msg):
+		super(DataDiskError, self).__init__()
+		msg = msg
+
+
+class DataDisk(object):
+	@staticmethod
+	def create(config, disk_name=None, disk_size=None, disk_type="PERSISTENT_SSD", zone=None):
+		# submit a request to the gce api for a new disk with the given parameters
+		# if inputs is not None, run a pipeline job to populate the disk
+		projectId = config.project_id
+		zones = [zone if zone is not None else x for x in config.zones.split(',')]
+
+		credentials = GoogleCredentials.get_application_default()
+		http = credentials.authorize(httplib2.Http())
+
+		if credentials.access_token_expired:
+			credentials.refresh(http)
+
+		gce = discovery.build('compute', 'v1', http=http)
+
+		diskTypes = {
+			"PERSISTENT_HDD": "pd-standard",
+			"PERSISTENT_SSD": "pd-ssd"
+		}
+
+		for z in zones:
+			body = {
+				"kind": "compute#disk",
+				"zone": "projects/{projectId}/zones/{zone}".format(projectId=projectId, zone=z),
+				"name": disk_name,
+				"sizeGb": disk_size,
+				"type": "projects/{projectId}/zones/{zone}/diskTypes/{type}".format(projectId=projectId, zone=z, type=diskTypes[disk_type])
+			}
+
+			try:
+				resp = gce.disks().insert(project=projectId, zone=z, body=body).execute()
+			except HttpError as e:
+				raise DataDiskError("Couldn't create data disk {n}: {reason}".format(n=name, reason=e))
+
+			while True:
+				try:
+					result = gce.zoneOperations().get(project=projectId, zone=z,  operation=resp['name']).execute()
+				except HttpError:
+					break
+				else:
+					if result['status'] == 'DONE':
+						break
+
+			# update the database ...
+			PipelineService.sendRequest()
+
+	@staticmethod
+	def delete():  # TODO: implement
+		pass
+
+	@staticmethod
+	def describe():  # TODO: implement
+		pass
 
 
 class PipelineServiceError(Exception):
@@ -61,102 +121,6 @@ class PipelineService:
 				raise PipelineServiceError("{reason}".format(reason=e))
 
 		return resp
-
-	@staticmethod
-	def startSupervisorScheduler(config, user):
-		pipelineDatabase = PipelineDatabase(config)
-
-		try:
-			pipelineDatabase.createJobTables()
-		except PipelineDatabaseError as e:
-			print e
-			exit(-1)
-
-		c = SafeConfigParser()
-
-		try:
-			c.readfp(open("/etc/supervisor/supervisord.conf"))
-		except IOError as e:
-			print "ERROR: supervisor config file (/etc/supervisor/supervisord.conf) -- double check your supervisor installation."
-			exit(-1)
-		else:
-			if not c.has_section("program:pipelineJobScheduler"):
-				c.add_section("program:pipelineJobScheduler")
-
-			if not c.has_section("program:pipelineJobCanceller"):
-				c.add_section("program:pipelineJobCanceller")
-
-			if not c.has_section("program:pipelinePreemptedLogsHandler"):
-				c.add_section("program:pipelinePreemptedLogsHandler")
-
-			if not c.has_section("program:pipelineDeleteLogsHandler"):
-				c.add_section("program:pipelineDeleteLogsHandler")
-
-			if not c.has_section("program:pipelineInsertLogsHandler"):
-				c.add_section("program:pipelineInsertLogsHandler")
-
-			c.set("program:pipelineJobScheduler", "process_name", "pipelineJobScheduler")
-			c.set("program:pipelineJobScheduler", "command", "pipelineJobScheduler")
-			c.set("program:pipelineJobScheduler", "environment", "PYTHONPATH={modulePath}".format(modulePath=MODULE_PATH))
-			c.set("program:pipelineJobScheduler", "numprocs", "1")
-			c.set("program:pipelineJobScheduler", "autostart", "true")
-			c.set("program:pipelineJobScheduler", "autorestart", "true")
-			c.set("program:pipelineJobScheduler", "user", user)
-
-			c.set("program:pipelineJobCanceller", "process_name", "pipelineJobCanceller")
-			c.set("program:pipelineJobCanceller", "command", "pipelineJobCanceller")
-			c.set("program:pipelineJobCanceller", "environment", "PYTHONPATH={modulePath}".format(modulePath=MODULE_PATH))
-			c.set("program:pipelineJobCanceller", "numprocs", "1")
-			c.set("program:pipelineJobCanceller", "autostart", "true")
-			c.set("program:pipelineJobCanceller", "autorestart", "true")
-			c.set("program:pipelineJobCanceller", "user", user)
-
-			c.set("program:pipelineInsertLogsHandler", "process_name", "%(program_name)s_%(process_num)s")
-			c.set("program:pipelineInsertLogsHandler", "command", "receivePipelineVmLogs --subscription pipelineVmInsert")
-			c.set("program:pipelineInsertLogsHandler", "environment", "PYTHONPATH={modulePath}".format(modulePath=MODULE_PATH))
-			c.set("program:pipelineInsertLogsHandler", "numprocs", "10")  # TODO: add to client config
-			c.set("program:pipelineInsertLogsHandler", "autostart", "true")
-			c.set("program:pipelineInsertLogsHandler", "autorestart", "true")
-			c.set("program:pipelineInsertLogsHandler", "user", user)
-
-			c.set("program:pipelinePreemptedLogsHandler", "process_name", "%(program_name)s_%(process_num)s")
-			c.set("program:pipelinePreemptedLogsHandler", "command", "receivePipelineVmLogs --subscription pipelineVmPreempted")
-			c.set("program:pipelinePreemptedLogsHandler", "environment", "PYTHONPATH={modulePath}".format(modulePath=MODULE_PATH))
-			c.set("program:pipelinePreemptedLogsHandler", "numprocs", "10")  # TODO: add to client config
-			c.set("program:pipelinePreemptedLogsHandler", "autostart", "true")
-			c.set("program:pipelinePreemptedLogsHandler", "autorestart", "true")
-			c.set("program:pipelinePreemptedLogsHandler", "user", user)
-
-			c.set("program:pipelineDeleteLogsHandler", "process_name", "%(program_name)s_%(process_num)s")
-			c.set("program:pipelineDeleteLogsHandler", "command", "receivePipelineVmLogs --subscription pipelineVmDelete")
-			c.set("program:pipelineDeleteLogsHandler", "environment", "PYTHONPATH={modulePath}".format(modulePath=MODULE_PATH))
-			c.set("program:pipelineDeleteLogsHandler", "numprocs", "10")  # TODO: add to client config
-			c.set("program:pipelineDeleteLogsHandler", "autostart", "true")
-			c.set("program:pipelineDeleteLogsHandler", "autorestart", "true")
-			c.set("program:pipelineDeleteLogsHandler", "user", user)
-
-			with open("/etc/supervisor/supervisord.conf", "w") as f:
-				c.write(f)
-
-		try:
-			subprocess.check_call(["sudo", "service", "supervisor", "restart"])
-
-		except subprocess.CalledProcessError as e:
-			print "ERROR: couldn't restart the scheduler (supervisor): {reason}".format(reason=e)
-			exit(-1)
-
-		print "Scheduler started successfully!"
-
-	@staticmethod
-	def stopSupervisorScheduler():
-		try:
-			subprocess.check_call(["sudo", "service", "supervisor", "stop"])
-
-		except subprocess.CalledProcessError as e:
-			print "ERROR: couldn't stop the scheduler (supervisor): {reason}".format(reason=e)
-			exit(-1)
-
-		print "Scheduler stopped successfully!"
 
 	@staticmethod
 	def watchJob(jobId, exchangeName):
@@ -198,7 +162,7 @@ class PipelineService:
 				exit(-1)  # probably should raise an exception
 
 		def deleteResource(url, headers, resourceName):
-			response = SESSION.delete(os.path.join(url, resourceName))
+			SESSION.delete(os.path.join(url, resourceName))
 
 		def createClusterAdminPassword():
 			return ''.join(SystemRandom().choice(string.ascii_uppercase + string.ascii_lowercase + string.digits) for _ in range(16))

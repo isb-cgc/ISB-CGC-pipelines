@@ -1,23 +1,24 @@
-import os
 import httplib2
-from random import randint
 from googleapiclient import discovery
 from oauth2client.client import GoogleCredentials
 from googleapiclient.errors import HttpError
+
+from pipelines.service import PipelineService
 
 
 class DataDiskError(Exception):
 	def __init__(self, msg):
 		super(DataDiskError, self).__init__()
-		self.msg = msg
+		msg = msg
 
 
 class DataDisk(object):
-	def __init__(self, name, config, diskSize, diskType="PERSISTENT_SSD", zone=None, inputs=None):
+	@staticmethod
+	def create(config, disk_name=None, disk_size=None, disk_type="PERSISTENT_SSD", zone=None):
 		# submit a request to the gce api for a new disk with the given parameters
 		# if inputs is not None, run a pipeline job to populate the disk
-		self.projectId = config.project_id
-		self.zones = [zone if zone is not None else x for x in config.zones.split(',')]
+		projectId = config.project_id
+		zones = [zone if zone is not None else x for x in config.zones.split(',')]
 
 		credentials = GoogleCredentials.get_application_default()
 		http = credentials.authorize(httplib2.Http())
@@ -32,29 +33,38 @@ class DataDisk(object):
 			"PERSISTENT_SSD": "pd-ssd"
 		}
 
-		for z in self.zones:
+		for z in zones:
 			body = {
 				"kind": "compute#disk",
-				"zone": "projects/{projectId}/zones/{zone}".format(projectId=self.projectId, zone=z),
-				"name": name,
-				"sizeGb": diskSize,
-				"type": "projects/{projectId}/zones/{zone}/diskTypes/{type}".format(projectId=self.projectId, zone=z, type=diskTypes[diskType])
+				"zone": "projects/{projectId}/zones/{zone}".format(projectId=projectId, zone=z),
+				"name": disk_name,
+				"sizeGb": disk_size,
+				"type": "projects/{projectId}/zones/{zone}/diskTypes/{type}".format(projectId=projectId, zone=z, type=diskTypes[disk_type])
 			}
 
 			try:
-				resp = gce.disks().insert(project=self.projectId, zone=z, body=body).execute()
+				resp = gce.disks().insert(project=projectId, zone=z, body=body).execute()
 			except HttpError as e:
 				raise DataDiskError("Couldn't create data disk {n}: {reason}".format(n=name, reason=e))
 
 			while True:
 				try:
-					result = gce.zoneOperations().get(project=self.projectId, zone=z,  operation=resp['name']).execute()
+					result = gce.zoneOperations().get(project=projectId, zone=z,  operation=resp['name']).execute()
 				except HttpError:
 					break
 				else:
 					if result['status'] == 'DONE':
 						break
 
+			# update the database ...
+			PipelineService.sendRequest()
 
-			# add the disk to the data_disks database
+	@staticmethod
+	def delete():  # TODO: implement
+		pass
+
+	@staticmethod
+	def describe():  # TODO: implement
+		pass
+
 
