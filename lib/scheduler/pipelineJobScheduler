@@ -4,7 +4,6 @@ import json
 import httplib2
 import argparse
 import threading
-from time import sleep
 from apiclient.discovery import build
 from googleapiclient.errors import HttpError
 from oauth2client.client import GoogleCredentials
