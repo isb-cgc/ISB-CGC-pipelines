@@ -6,6 +6,7 @@ from pipelines.db import PipelineDatabase, PipelineDatabaseError
 from pipelines.schema import PipelineSchema
 from pipelines.builder import PipelineBuilder, PipelineSchemaValidationError, PipelineSubmitError
 from pipelines.queue import PipelineQueue, PipelineQueueError
+from pipelines.service import PipelineService, PipelineServiceError
 
 # TODO: break this class into multiple classes and move anything using the db utils class to another file
 
@@ -45,31 +46,22 @@ class PipelineScheduler(object):
 
 
 	@staticmethod
-	def stopPipeline(args, config):
-		pipelineQueue = PipelineQueue('CANCEL_Q')
+	def stopPipeline(config, operation, **kwargs):
+		pipelineQueue = PipelineQueue('CANCEL_Q', host=os.environ["RABBITMQ_SERVICE_HOST"], port=os.environ["RABBITMQ_SERVICE_PORT"])
 
-		pipelineDatabase = PipelineDatabase(config)
+		req = {
+			"select": ["current_status", "operation_id", "job_id"],
+			"criteria": {
+				"operation": operation,
+				"values": [{"key": k, "value": v} for k, v in kwargs.iteritems()]
+			}
+		}
 
-		if args.jobId:
-			try:
-				jobInfo = pipelineDatabase.getJobInfo(select=["current_status", "operation_id", "job_id"], where={"job_id": args.jobId})
+		try:
+			jobInfo = PipelineService.sendRequest(os.environ["SQLITE_READER_SERVICE_HOST"], os.environ["SQLITE_READER_SERVICE_PORT"], "/jobs", data=req, protocol="tcp")
 
-			except PipelineDatabaseError as e:
-				raise PipelineSchedulerError("Couldn't stop pipeline: {reason}".format(reason=e))
-
-		elif args.pipeline:
-			try:
-				jobInfo = pipelineDatabase.getJobInfo(select=["current_status", "operation_id", "job_id"], where={"pipeline_name": args.pipeline})
-
-			except PipelineDatabaseError as e:
-				raise PipelineSchedulerError("Couldn't stop pipeline: {reason}".format(reason=e))
-
-		elif args.tag:
-			try:
-				jobInfo = pipelineDatabase.getJobInfo(select=["current_status", "operation_id", "job_id"], where={"tag": args.tag})
-
-			except PipelineDatabaseError as e:
-				raise PipelineSchedulerError("Couldn't stop pipeline: {reason}".format(reason=e))
+		except PipelineServiceError as e:
+			raise PipelineSchedulerError("Couldn't stop pipeline: {reason}".format(reason=e))
 
 		for j in jobInfo:
 			if j.current_status == "RUNNING":
@@ -82,23 +74,28 @@ class PipelineScheduler(object):
 				except PipelineQueueError as e:
 					raise PipelineSchedulerError("Couldn't stop pipeline: {reason}".format(reason=e))
 
-
 	@staticmethod
-	def restartJobs(args, config):  # TODO: reimplement
-		pipelineDatabase = PipelineDatabase(config)
-		pipelineQueue = PipelineQueue('WAIT_Q')
+	def restartJobs(config, operation, **kwargs):  # TODO: reimplement
+		pipelineQueue = PipelineQueue('WAIT_Q', host=os.environ["RABBITMQ_SERVICE_HOST"], port=os.environ["RABBITMQ_SERVICE_PORT"])
 
-		if args.jobId:
-			try:
-				jobInfo = pipelineDatabase.getJobInfo(select=["request"], where={"job_id": args.jobId})[0].request
+		req = {
+			"select": ["job_id", "request"],
+			"criteria": {
+				"operation": operation,
+				"values": [{"key": k, "value": v} for k, v in kwargs.iteritems()]
+			}
+		}
 
-			except PipelineDatabaseError as e:
-				raise PipelineSchedulerError("Couldn't restart pipeline: {reason}".format(reason=e))
+		try:
+			jobInfo = PipelineService.sendRequest(os.environ["SQLITE_READER_SERVICE_HOST"],  os.environ["SQLITE_READER_SERVICE_PORT"], "/jobs", data=req, protocol="tcp")
 
-			request = json.loads(jobInfo)
+		except PipelineServiceError as e:
+			raise PipelineSchedulerError("Couldn't restart job(s): {reason}".format(reason=e))
+
+		for j in jobInfo:
 			msg = {
-				"job_id": args.jobId,
-				"request": request
+				"job_id": j["job_id"],
+				"request": json.loads(j["request"])
 			}
 
 			try:
@@ -107,56 +104,23 @@ class PipelineScheduler(object):
 			except PipelineQueueError as e:
 				raise PipelineSchedulerError("Couldn't restart pipeline: {reason}".format(reason=e))
 
-		if args.preempted:
-			try:
-				preempted = pipelineDatabase.getJobInfo(select=["job_id", "request"], where={"current_status": "PREEMPTED"})
-
-			except PipelineDatabaseError as e:
-				raise PipelineSchedulerError("Couldn't restart pipeline: {reason}".format(reason=e))
-
-			for p in preempted:
-				msg = {
-					"job_id": p.job_id,
-					"request": json.loads(p.request)
-				}
-
-				try:
-					pipelineQueue.publish(json.dumps(msg))
-
-				except PipelineQueueError as e:
-					raise PipelineSchedulerError("Couldn't restart pipeline: {reason}".format(reason=e))
-
 	@staticmethod
-	def getJobLogs(args, config):  # TODO: reimplement
-		pipelineDatabase = PipelineDatabase(config)
+	def getJobLogs(config, **kwargs):  # TODO: reimplement
+		req = {
+			"select": ["stdout_log", "stderr_log", "gcs_log_path"],
+			"criteria": {
+				"operation": "AND",
+				"values": [{"key": k, "value": v} for k, v in kwargs.iteritems()]
+			}
+		}
 
 		try:
-			jobInfo = pipelineDatabase.getJobInfo(select=["stdout_log", "stderr_log", "gcs_log_path"], where={"job_id": args.jobId})
+			jobLogs = PipelineService.sendRequest(os.environ["SQLITE_READER_SERVICE_HOST"],  os.environ["SQLITE_READER_SERVICE_PORT"], "/read/jobs", data=req, protocol="tcp")
 
 		except PipelineDatabaseError as e:
 			raise PipelineSchedulerError("Couldn't get job logs: {reason}".format(reason=e))
 
-		with open(os.devnull, 'w') as fnull:
-			if args.stdout:
-				try:
-					stdoutLogFile = subprocess.check_output(["gsutil", "cat", os.path.join(jobInfo[0].gcs_log_path, jobInfo[0].stdout_log)], stderr=fnull)
-				except subprocess.CalledProcessError as e:
-					raise PipelineSchedulerError("Couldn't get the stdout log : {reason}".format(reason=e))
-
-				print "STDOUT:\n"
-				print stdoutLogFile
-				print "---------\n"
-
-			if args.stderr:
-				try:
-					stderrLogFile = subprocess.check_output(["gsutil", "-q", "cat", os.path.join(jobInfo[0].gcs_log_path, jobInfo[0].stderr_log)], stderr=fnull)
-
-				except subprocess.CalledProcessError as e:
-					raise PipelineSchedulerError("Couldn't get the stderr log : {reason}".format(reason=e))
-
-				print "STDERR:\n"
-				print stderrLogFile
-				print "---------\n"
+		return jobLogs
 
 	@staticmethod
 	def getJobsList(config, pipeline=None, tag=None, status=None, createTimeAfter=None, limit=None):  # TODO: reimplement

@@ -28,7 +28,7 @@ class SqliteWriter(webapp2.RequestHandler):
 		resp = None
 		status = None
 
-		if re.match(SQLITE_INSERT, self.request.path):
+		if re.match(SQLITE_INSERT_EXP, self.request.path):
 			# request format:
 			#
 			# {
@@ -50,7 +50,7 @@ class SqliteWriter(webapp2.RequestHandler):
 					"id": id
 				}
 
-		elif re.match(SQLITE_UPDATE, self.request.path):
+		elif re.match(SQLITE_UPDATE_EXP, self.request.path):
 			table = os.path.basename(self.request.path)
 			# request format:
 			# {
@@ -82,7 +82,7 @@ class SqliteWriter(webapp2.RequestHandler):
 			else:
 				status = 204
 
-		elif re.match(SQLITE_INCR_VALUE, self.request.path):
+		elif re.match(SQLITE_INCR_VALUE_EXP, self.request.path):
 			# request format:
 			#
 			# {
@@ -119,7 +119,7 @@ class SqliteReader(webapp2.RequestHandler):
 		resp = None
 		status = None
 
-		if re.match(SQLITE_READ, self.request.path):
+		if re.match(SQLITE_READ_EXP, self.request.path):
 			# request format:
 			# {
 			#   "select": [ ... column values to select ... ],
@@ -161,10 +161,10 @@ class SqliteReader(webapp2.RequestHandler):
 
 
 app = webapp2.WSGIApplication([
-	(SQLITE_READ, SqliteReader),
-	(SQLITE_INSERT, SqliteWriter),
-	(SQLITE_UPDATE, SqliteWriter),
-	(SQLITE_INCR_VALUE, SqliteWriter),
+	(SQLITE_READ_EXP, SqliteReader),
+	(SQLITE_INSERT_EXP, SqliteWriter),
+	(SQLITE_UPDATE_EXP, SqliteWriter),
+	(SQLITE_INCR_VALUE_EXP, SqliteWriter),
 ], debug=True)
 
 

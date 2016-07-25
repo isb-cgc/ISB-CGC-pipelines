@@ -1,7 +1,7 @@
 import os
 import pyinotify
 from ConfigParser import SafeConfigParser, NoOptionError, NoSectionError
-from pipelines.scheduler import PipelineScheduler
+from pipelines.logger import PipelineLogger
 from pipelines.paths import *
 
 
@@ -26,38 +26,32 @@ class PipelineConfig(SafeConfigParser, object):
 			"project_id": {
 				"section": "gcp",
 				"required": True,
-				"default": None,
-				"message": "Enter your GCP project ID: "
+				"default": None
 			},
 			"zones": {
 				"section": "gcp",
 				"required": True,
-				"default": "us-central1-a,us-central1-b,us-central1-c,us-central1-f,us-east1-b,us-east1-c,us-east1-d",
-				"message": "Enter a comma-delimited list of GCE zones (leave blank to use the default list of all US zones): "
+				"default": "us-central1-a,us-central1-b,us-central1-c,us-central1-f,us-east1-b,us-east1-c,us-east1-d"
 			},
 			"scopes": {
 				"section": "gcp",
 				"required": True,
-				"default": "https://www.googleapis.com/auth/genomics,https://www.googleapis.com/auth/compute,https://www.googleapis.com/auth/devstorage.full_control",
-				"message": "Enter a comma-delimited list of GCP scopes (leave blank to use the default list of scopes): "
+				"default": "https://www.googleapis.com/auth/genomics,https://www.googleapis.com/auth/compute,https://www.googleapis.com/auth/devstorage.full_control"
 			},
 			"service_account_email": {
 				"section": "gcp",
 				"required": True,
-				"default": "default",
-				"message": "Enter a valid service account email (leave blank to use the default service account): "
+				"default": "default"
 			},
 			"max_running_jobs": {
 				"section": "pipelines",
 				"required": True,
-				"default": 2000,
-				"message": "Enter the maximum number of running jobs for any given time (leave blank to use default 2000): "
+				"default": 2000
 			},
 			"autorestart_preempted": {
 				"section": "pipelines",
 				"required": True,
-				"default": False,
-				"message": "Would you like to automatically restart preempted jobs? (Only relevant when submitting jobs with the '--preemptible' flag; default is No) Y/N : "
+				"default": False
 			}
 		}
 

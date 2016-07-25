@@ -1,11 +1,7 @@
 #!/usr/bin/env python
-import os
 import json
-import requests
 import argparse
-import httplib2
-from googleapiclient import discovery
-from oauth2client.client import GoogleCredentials
+import subprocess
 from pipelines.routes import *
 from pipelines.paths import *
 from pipelines.config import PipelineConfig
@@ -24,7 +20,7 @@ if __name__ == "__main__":
 	dataDisks.add_argument("dataDiskOperation", choices=["create", "delete", "list", "describe"])
 
 	config = subparsers.add_parser("config")
-	config.add_argument("configOperation", choices=["init", "update", "view"])
+	config.add_argument("configOperation", choices=["update", "view"])
 
 	logs = subparsers.add_parser("logs")
 	logs.add_argument("logsOperation", choices=["display"])
@@ -56,7 +52,7 @@ if __name__ == "__main__":
 			parser.add_argument("--syncOutputs", required=False, default=None)
 
 			args = parser.parse_args(args=unknown)
-			resp = PipelineService.sendRequest(config.service_endpoint, config.service_port, JOBS_LIST_CREATE_EXP, data=vars(args))
+			resp = PipelineService.sendRequest(config.service_endpoint, config.service_port, JOBS_CREATE_EXP, data=vars(args))
 			print resp.get("msg")
 
 		elif args.jobsOperation == "edit":
@@ -78,6 +74,8 @@ if __name__ == "__main__":
 			parser.add_argument("jobId", required=True)
 
 			args = parser.parse_args(args=unknown)
+
+			uri = "{route}?{query}"
 			resp = PipelineService.sendRequest(config.service_endpoint, config.service_port, JOB_EDIT_EXP, data=vars(args))
 			print resp.get("msg")
 
@@ -88,10 +86,15 @@ if __name__ == "__main__":
 			parser.add_argument("--createTimeAfter", required=False, default=None)
 			parser.add_argument("--limit", required=False, default=None)
 
+			aggregation = parser.add_mutually_exclusive_group(required=True)
+			aggregation.add_argument("--union", action='store_true', default=False)
+			aggregation.add_argument("--intersection", action='store_true', default=True)  # will this work?
+			aggregation.add_argument("--complement", action='store_true', default=False)
+
 			args = parser.parse_args(args=unknown)
 
 			uri = "{route}?{query}"
-			query = ["select={select}".format(select=','.join(["job_id", "operation_id", "pipeline_name", "tag", "current_status", "create_time", "preemptions"]))]
+			query = ["select={select}".format(select=','.join(["job_id", "operation_id", "pipeline_name", "tag", "current_status", "create_time", "preemptions"])), "operation={op}".format(op=args.aggregation)]
 
 			if args.pipeline:
 				query.append("pipeline={p}".format(p=args.pipeline))
@@ -109,10 +112,74 @@ if __name__ == "__main__":
 				query.append("limit={l}".format(l=args.limit))
 
 			resp = PipelineService.sendRequest(config.service_endpoint, config.service_port, uri.format(route="/jobs", query='&'.join(query)))
-			jobs = json.loads(resp.get("jobsList"))
+			jobs = json.loads(resp.get("jobs"))
 
-			for j in jobs:
-				print j
+
+			def fieldPadding(maxLen, actualLen):
+				return ''.join([' ' for x in range(maxLen - actualLen + 4)])
+
+			header = "JOBID%sPIPELINE%sOPERATION ID%sTAG%sSTATUS%sCREATE TIME%sPREEMPTIONS\n"
+			jobStatusString = "{jobId}%s{pipeline}%s{operationId}%s{tag}%s{status}%s{createTime}%s{preemptions}\n"
+
+			if len(jobs) > 0:
+				jobStrings = []
+
+				jobIdLengths = [len(str(x.job_id)) if x.job_id is not None else len(str("None")) for x in jobs]
+				jobIdLengths.append(len("JOBID"))
+				maxJobIdLen = max(jobIdLengths)
+
+				pipelineLengths = [len(x.pipeline_name) if x.pipeline_name is not None else len(str("None")) for x in
+				                   jobs]
+				pipelineLengths.append(len("PIPELINE"))
+				maxPipelineLen = max(pipelineLengths)
+
+				operationIdLengths = [len(x.operation_id) if x.operation_id is not None else len(str("None")) for x in
+				                      jobs]
+				operationIdLengths.append(len("OPERATION ID"))
+				maxOperationIdLen = max(operationIdLengths)
+
+				statusLengths = [len(x.current_status) if x.current_status is not None else len(str("None")) for x in
+				                 jobs]
+				statusLengths.append(len("STATUS"))
+				maxStatusLen = max(statusLengths)
+
+				tagLengths = [len(x.tag) if x.tag is not None else len(str("None")) for x in jobs]
+				tagLengths.append(len("TAG"))
+				maxTagLen = max(tagLengths)
+
+				createTimeLengths = [len(x.create_time) if x.create_time is not None else len(str("None")) for x in
+				                     jobs]
+				createTimeLengths.append(len("CREATE TIME"))
+				maxCreateTimeLen = max(createTimeLengths)
+
+				jobStrings.append \
+					(header % (fieldPadding(maxJobIdLen, len("JOBID")), fieldPadding(maxPipelineLen, len("PIPELINE")),
+					           fieldPadding(maxOperationIdLen, len("OPERATION ID")),
+					           fieldPadding(maxTagLen, len("TAG")),
+					           fieldPadding(maxStatusLen, len("STATUS")),
+					           fieldPadding(maxCreateTimeLen, len("CREATE TIME"))))
+
+				for j in jobs:
+					if j.create_time is not None:
+						ct = j.create_time
+					else:
+						ct = "None"
+					if j.operation_id is not None:
+						op = j.operation_id
+					else:
+						op = "None"
+
+					jobStrings.append \
+						(jobStatusString.format(jobId=j.job_id, pipeline=j.pipeline_name, operationId=op, tag=j.tag,
+						                        status=j.current_status, createTime=ct, preemptions=j.preemptions) % (
+							 fieldPadding(maxJobIdLen, len(str(j.job_id))),
+							 fieldPadding(maxPipelineLen, len(j.pipeline_name)),
+							 fieldPadding(maxOperationIdLen, len(op)), fieldPadding(maxTagLen, len(j.tag)),
+							 fieldPadding(maxStatusLen, len(j.current_status)),
+							 fieldPadding(maxCreateTimeLen, len(ct))))
+
+				for s in jobStrings:
+					print s
 
 		elif args.jobsOperation == "describe":
 			parser.add_argument("jobId")
@@ -129,16 +196,26 @@ if __name__ == "__main__":
 			parser.add_argument("--pipeline")
 			parser.add_argument("--tag")
 
+			aggregation = parser.add_mutually_exclusive_group(required=True)
+			aggregation.add_argument("--union", action='store_true', default=False)
+			aggregation.add_argument("--intersection", action='store_true', default=True)  # will this work?
+			aggregation.add_argument("--complement", action='store_true', default=False)
+
 			resp = PipelineService.sendRequest(config.service_endpoint, config.service_port, JOB_CANCEL_EXP, data=vars(args))
 			print resp.get("msg")
 
-		elif args.jobsOperation == "restart":
+		elif args.jobsOperation == "restart":  # TODO: start here
 			restartGrp = parser.add_mutually_exclusive_group()
 			restartGrp.add_argument("--jobId")
 			restartGrp.add_argument("--tag")
 			restartGrp.add_argument("--preempted", action="store_true")
 
-			resp = PipelineService.sendRequest(config.service_endpoint, config.service_port, JOB_RESTART_EXP, data=vars(args))
+			args = parser.parse_args(args=unknown)
+
+			query = "?preempted={preempted}".format(preempted=bool(args.preempted))
+			uri = "{route}{query}".format(route=JOB_RESTART_EXP, query=query)
+
+			resp = PipelineService.sendRequest(config.service_endpoint, config.service_port, uri, data=vars(args))
 			print resp.get("msg")
 
 	elif args.subcommand == "data-disks":
@@ -151,7 +228,7 @@ if __name__ == "__main__":
 
 			args = parser.parse_args(args=unknown)
 
-			resp = PipelineService.sendRequest(config.service_endpoint, config.service_port, DATADISKS_LIST_CREATE_EXP, data=vars(args))
+			resp = PipelineService.sendRequest(config.service_endpoint, config.service_port, DATADISKS_CREATE_EXP, data=vars(args))
 			print resp.get("msg")
 
 		elif args.dataDisksOperation == "delete":
@@ -160,7 +237,7 @@ if __name__ == "__main__":
 
 			args = parser.parse_args(args=unknown)
 
-			resp = PipelineService.sendRequest(config.service_endpoint, config.service_port, DATADISK_DESCRIBE_DELETE_EXP, data=vars(args))
+			resp = PipelineService.sendRequest(config.service_endpoint, config.service_port, DATADISKS_DELETE_EXP, data=vars(args))
 			print resp.get("msg")
 
 		elif args.dataDisksOperation == "list":
@@ -173,7 +250,7 @@ if __name__ == "__main__":
 			if args.zone:
 				query.append("zone={z}".format(z=args.zone))
 
-			uri = "{route}?{query}".format(route=DATADISKS_LIST_CREATE_EXP, query='&'.join(query))
+			uri = "{route}?{query}".format(route=DATADISKS_LIST_EXP, query='&'.join(query))
 			resp = PipelineService.sendRequest(config.service_endpoint, config.service_port, uri)
 
 			# TODO: pretty print response
@@ -183,7 +260,7 @@ if __name__ == "__main__":
 
 			args = parser.parse_args(args=unknown)
 			query = "diskName={d}".format(d=args.diskName)
-			uri = "{route}?{query}".format(route=DATADISK_DESCRIBE_DELETE_EXP, query=query)
+			uri = "{route}?{query}".format(route=DATADISKS_DESCRIBE_EXP, query=query)
 			resp = PipelineService.sendRequest(config.service_endpoint, config.service_port, uri)
 
 			# TODO: pretty print response
@@ -192,24 +269,34 @@ if __name__ == "__main__":
 		parser = argparse.ArgumentParser()
 
 		if args.logsOperation == "display":
-			parser.add_argument("--stderr", action="store_true")
-			parser.add_argument("--stdout", action="store_true", default=True)
 			parser.add_argument("jobId")
 
 			args = parser.parse_args(args=unknown)
 			query = "jobId={j}".format(jobId=args.jobId)
 
-			if args.stdout:
-				uri = "{route}?{query}".format(route=LOG_STDOUT_EXP, query=query)
-				resp = PipelineService.sendRequest(config.service_endpoint, config.service_port, uri)
+			uri = "{route}?{query}".format(route=LOG_GET_EXP, query=query)
+			resp = PipelineService.sendRequest(config.service_endpoint, config.service_port, uri)
 
-				# TODO: get the logs path from the response and use `gsutil cat ... ` to print
+			try:
+				stdoutLogFile = subprocess.check_output(["gsutil", "cat", os.path.join(resp["gcs_log_path"], resp["stdout_log_path"])])
+			except subprocess.CalledProcessError as e:
+				print "Couldn't get the stdout log : {reason}".format(reason=e)
+				exit(-1)
 
-			elif args.stderr:
-				uri = "{route}?{query}".format(route=LOG_STDERR_EXP, query=query)
-				resp = PipelineService.sendRequest(config.service_endpoint, config.service_port, uri)
+			print "STDOUT:\n"
+			print stdoutLogFile
+			print "---------\n"
 
-				# TODO: get the logs path from the response and use `gsutil cat ... ` to print
+
+			try:
+				stderrLogFile = subprocess.check_output(["gsutil", "-q", "cat", os.path.join(resp["gcs_log_path"], resp["stdout_log_path"])])
+
+			except subprocess.CalledProcessError as e:
+				print "Couldn't get the stderr log : {reason}".format(reason=e)
+
+			print "STDERR:\n"
+			print stderrLogFile
+			print "---------\n"
 
 	elif args.subcommand == "scheduler":  # TODO: check to see if config file exists -- if so, check the configuration for enabled extensions; otherwise report an error if the scheduler subcommand is used
 		config = PipelineConfig(CLIENT_CONFIG_PATH)
@@ -226,13 +313,7 @@ if __name__ == "__main__":
 	elif args.subcommand == "config":
 		parser = argparse.ArgumentParser()
 
-		if args.configOperation == "init":
-			# TODO: prompt for user input to construct request
-			req = {}
-			resp = PipelineService.sendRequest(config.service_endpoint, config.service_port, CONFIG_VIEW_INIT_EXP, data=req)
-			print resp.get("msg")
-
-		elif args.configOperation == "update":
+		if args.configOperation == "update":
 			parser.add_argument("--projectId")
 			parser.add_argument("--zones")
 			parser.add_argument("--serviceAccount")
@@ -254,6 +335,6 @@ if __name__ == "__main__":
 				#	exit(-1)
 
 		elif args.configOperation == "view":
-			resp = PipelineService.sendRequest(config.service_endpoint, config.service_port, CONFIG_VIEW_INIT_EXP)
+			resp = PipelineService.sendRequest(config.service_endpoint, config.service_port, CONFIG_VIEW_EXP)
 
 			# TODO: pretty print response

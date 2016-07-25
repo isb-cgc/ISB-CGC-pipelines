@@ -9,8 +9,6 @@ from StringIO import StringIO
 from paste import httpserver
 from pipelines.routes import *
 from pipelines.config import PipelineConfig, PipelineConfigError
-from pipelines.db import PipelineDatabase, PipelineDatabaseError
-from pipelines.scheduler import PipelineScheduler, PipelineSchedulerError
 
 
 CONFIG = PipelineConfig(path=os.environ["PIPELINES_CONFIG"])
@@ -23,56 +21,25 @@ class ConfigServerError(Exception):
 
 class ConfigWriter(webapp2.RequestHandler):
 	def post(self):
-		data = json.loads(self.request.body)
 		resp = None
 		status = None
 
-		if re.match(CONFIG_INIT, self.request.path):
+		if re.match(CONFIG_UPDATE_EXP, self.request.path):
 			# request format:
 			#
 			# {
-			#   <key-value pairs for each column in the table>
+			#   "section": <section>,
+			#   "option": <option>,
+			#   "value": <value>
 			# }
 			#
-			table = os.path.basename(self.request.path)
+			section = self.request.get("section")
+			option = self.request.get("option")
+			value = self.request.get("value")
 			try:
-				id = PIPELINES_DB.insert(table, **data)
+				CONFIG.update(section, option, value)
 
-			except PipelineDatabaseError as e:
-				resp = {
-					"msg": e
-				}
-				status = 400
-
-			else:
-				resp = {
-					"id": id
-				}
-
-		elif re.match(CONFIG_UPDATE, self.request.path):
-			table = os.path.basename(self.request.path)
-			# request format:
-			# {
-			#   "updates": { ... < column values to update > ... },
-			#   "criteria": {
-			#      "operation": "AND"|"OR"|"NOT",
-			#      "values": [
-			#          {
-			#             "operation": ...,
-			#             "values": [ ... ]
-			#          } | {
-			#          {
-			#            "key": <column-name>,
-			#            "value": <column-value>
-			#          }, ...
-			#      ]
-			#   }
-			# }
-			#
-			try:
-				PIPELINES_DB.update(table, data["updates"], data["criteria"])
-
-			except PipelineDatabaseError as e:
+			except PipelineConfigError as e:
 				resp = {
 					"msg": e
 				}
@@ -91,8 +58,7 @@ class ConfigWriter(webapp2.RequestHandler):
 
 
 app = webapp2.WSGIApplication([
-	(CONFIG_INIT, ConfigWriter),
-	(CONFIG_UPDATE, ConfigWriter),
+	(CONFIG_UPDATE_EXP, ConfigWriter),
 ], debug=True)
 
 

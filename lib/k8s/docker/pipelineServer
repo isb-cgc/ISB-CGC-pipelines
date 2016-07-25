@@ -14,11 +14,11 @@ from googleapiclient.errors import HttpError
 from StringIO import StringIO
 from paste import httpserver
 from pipelines.routes import *
-from pipelines.schema import PipelineSchema
+from pipelines.queue import PipelineQueue, PipelineQueueError
+from pipelines.schema import PipelineSchema, PipelineSchemaValidationError, PipelineSubmitError
 from pipelines.builder import PipelineBuilder
 from pipelines.config import PipelineConfig
 from pipelines.service import PipelineService, PipelineServiceError
-from pipelines.scheduler import PipelineScheduler
 import pipelines.service.DataDisk
 import pipelines.service.DataDiskError
 
@@ -36,57 +36,148 @@ CONFIG_WRITER_SERVICE_HOST = os.environ["CONFIG_WRITER_SERVICE_HOST"]
 
 class Jobs(webapp2.RequestHandler):
 	def get(self):
-		kwargs = {}
+		if re.match(JOBS_GET_EXP, self.request.path):
+			queryParams = {x.split('=')[0]: x.split('=')[1] for x in self.request.query_string.split('&')}
 
-		if re.match(JOBS_LIST_CREATE_EXP, self.request.path):
 			try:
-				jobsList = PipelineService.sendRequest(SQLITE_READER_SERVICE_HOST, SQLITE_READER_SERVICE_PORT, "/read/jobs?{query}".format(query=self.request.query_string), protocol="tcp")
+				req = {
+					"select": queryParams.pop("select").split(','),
+					"criteria": {
+						"operation": queryParams.pop("operation"),
+						"values": [{"key": k, "value": v} for k, v in queryParams.iteritems()]
+					}
+				}
 
-			except ValueError as e:
+			except KeyError:
+				req = {
+					"select": [],
+					"criteria": {
+						"operation": queryParams.pop("operation"),
+						"values": [{"key": k, "value": v} for k, v in queryParams.iteritems()]
+					}
+				}
+
+			try:
+				jobsList = PipelineService.sendRequest(SQLITE_READER_SERVICE_HOST, SQLITE_READER_SERVICE_PORT, "/read/jobs", data=req, protocol="tcp")
+
+			except PipelineServiceError as e:
 				self.response.set_status(400, e)
 
 			else:
 				resp = {
-					"jobsList": jobsList.json()["data"]
+					"jobs": jobsList.json()["data"]
 				}
 
-				self.response.out = StringIO(json.dumps(resp))
-				self.response.set_status(200)
-
-		elif re.match(JOB_DESCRIBE_EXP, self.request.path):  # TODO: implement
-			pass  # describe a particular job
+				status = 200
 
 		else:
-			self.response.set_status(404, "Resource {r} not found".format(r=self.request.path))
+			status = 404
+			resp = {
+				"msg": "Resource {r} not found".format(r=self.request.path)
+			}
+
+		self.response.out = StringIO(json.dumps(resp))
+		self.response.set_status(status)
 
 	def post(self):
 		kwargs = json.loads(self.request.body)
+		resp = None
+		status = None
 
-		if re.match(JOBS_LIST_CREATE_EXP, self.request.path):
-			# submits a job
+		if re.match(JOBS_CREATE_EXP, self.request.path):
+			pipelineSpec = PipelineSchema(CONFIG, **kwargs)
+			pipelineBuilder = PipelineBuilder(CONFIG)
+			pipelineBuilder.addStep(pipelineSpec)
+
 			try:
-				PipelineScheduler.submitPipeline(CONFIG, **kwargs)
-			except:  # TODO: better exception handling in the utility classes
-				self.response.set_status(400)
+				jobId = pipelineBuilder.run()
+
+			except PipelineSchemaValidationError as e:
+				status = 400
+
+			except PipelineSubmitError as e:
+				status = 400
 
 			else:
+				resp = {
+					"job_id": jobId
+				}
 				self.response.set_status(201)
 
 		elif re.match(JOB_EDIT_EXP, self.request.path):
-			# edit job values given by **kwargs
-			PipelineScheduler.editPipeline(CONFIG, **kwargs)
+			queryParams = {x.split('=')[0]: x.split('=')[1] for x in self.request.query_string.split('&')}
+			req = {
+				"updates": kwargs,
+				"criteria": {
+					"operation": "AND",
+					"values": [
+						{
+							"key": "job_id",
+							"value": queryParams["job_id"]
+						}
+					]
+				}
+			}
+
+			try:
+				PipelineService.sendRequest(SQLITE_WRITER_SERVICE_HOST, SQLITE_WRITER_SERVICE_PORT, "/update/jobs", data=req, protocol="tcp")
+
+			except PipelineServiceError as e:
+				status = 400
+				resp = {
+					"msg": "Couldn't edit job: {reason}".format(reason=e)
+				}
+
+			else:
+				status = 204
 
 		elif re.match(JOB_RESTART_EXP, self.request.path):
-			# restart a job
-			PipelineScheduler.restartJobs(CONFIG, **kwargs)
+			pipelineQueue = PipelineQueue('WAIT_Q', host=os.environ["RABBITMQ_SERVICE_HOST"], port=os.environ["RABBITMQ_SERVICE_PORT"])
+
+			req = {
+				"select": ["job_id", "request"],
+				"criteria": {
+					"operation": operation,
+					"values": [{"key": k, "value": v} for k, v in kwargs.iteritems()]
+				}
+			}
+
+			try:
+				jobInfo = PipelineService.sendRequest(SQLITE_READER_SERVICE_HOST, SQLITE_READER_SERVICE_PORT, "/jobs", data=req, protocol="tcp")
+
+			except PipelineServiceError as e:
+				status = 400
+				resp = {
+					"msg": "Couldn't restart job: {reason}".format(reason=e)
+				}
+
+			else:
+				for j in jobInfo:
+					msg = {
+						"job_id": j["job_id"],
+						"request": json.loads(j["request"])
+					}
+
+					try:
+						pipelineQueue.publish(json.dumps(msg))
+
+					except PipelineQueueError as e:
+						raise PipelineSchedulerError("Couldn't restart pipeline: {reason}".format(reason=e))
 
 		elif re.match(JOB_CANCEL_EXP, self.request.path):
 			# stop/cancel a job
 			PipelineScheduler.stopPipeline(CONFIG, **kwargs)
 
 		else:
-			self.response.set_status(404, "Resource {r} not found".format(r=self.request.path))
+			status = 404
+			resp = {
+				"msg": "Resource {r} not found".format(r=self.request.path)
+			}
 
+		if resp is not None:
+			self.response.out = StringIO(json.dumps(resp))
+
+		self.response.set_status(status)
 
 class Config(webapp2.RequestHandler):
 	def post(self):
@@ -94,10 +185,7 @@ class Config(webapp2.RequestHandler):
 		resp = None
 		status = None
 
-		if re.match(CONFIG_VIEW_INIT_EXP, self.request.path):
-			pass  # initialize the config file
-
-		elif re.match(CONFIG_EDIT_EXP, self.request.path):
+		if re.match(CONFIG_EDIT_EXP, self.request.path):
 			pass  # edit the config file
 
 		else:
@@ -113,7 +201,7 @@ class Config(webapp2.RequestHandler):
 		resp = None
 		status = None
 
-		if re.match(CONFIG_VIEW_INIT_EXP, self.request.path):
+		if re.match(CONFIG_VIEW_EXP, self.request.path):
 			pass  # package up the config file contents and return
 
 		else:
@@ -131,7 +219,7 @@ class DataDisk(webapp2.RequestHandler):
 		resp = None
 		status = None
 
-		if re.match(DATADISKS_LIST_CREATE_EXP, self.request.path):
+		if re.match(DATADISKS_CREATE_EXP, self.request.path):
 			# request format:
 			# {
 			#   "diskName": <disk-name>,
@@ -152,7 +240,7 @@ class DataDisk(webapp2.RequestHandler):
 			else:
 				status = 204
 
-		elif re.match(DATADISK_DESCRIBE_DELETE_EXP, self.request.path):
+		elif re.match(DATADISKE_DELETE_EXP, self.request.path):
 			# request format:
 			# {
 			#   "disk_name": <disk-name>,
@@ -177,10 +265,10 @@ class DataDisk(webapp2.RequestHandler):
 		resp = None
 		status = None
 
-		if re.match(DATADISKS_LIST_CREATE_EXP, self.request.path):
+		if re.match(DATADISKS_LIST_EXP, self.request.path):
 			results = PipelineService.sendRequest(SQLITE_READER_SERVICE_HOST, SQLITE_READER_SERVICE_PORT, "")  # TODO: args
 
-		elif re.match(DATADISK_DESCRIBE_DELETE_EXP, self.request.path):
+		elif re.match(DATADISK_DESCRIBE_EXP, self.request.path):
 			pass  # describe the data disk(s)
 
 		else:
@@ -194,16 +282,33 @@ class DataDisk(webapp2.RequestHandler):
 
 class Log(webapp2.RequestHandler):
 	def get(self):
-		data = json.loads(self.request.body)
 		resp = None
 		status = None
 
-		if re.match(LOG_STDOUT_EXP, self.request.path):
-			pass  # get the stdout log path and return
+		if re.match(LOG_GET_EXP, self.request.path):
+			jobId = os.path.basename(self.request.path)
 
-		elif re.match(LOG_STDERR_EXP, self.request.path):
-			pass  # get the stderr log path and return
+			req = {
+				"select": ["stdout_log", "stderr_log", "gcs_log_path"],
+				"criteria": {
+					"operation": "AND",
+					"values": [
+						{
+							"key": "job_id",
+							"value": jobId
+						}
+					]
+				}
+			}
 
+			try:
+				jobLogs = PipelineService.sendRequest(os.environ["SQLITE_READER_SERVICE_HOST"], os.environ["SQLITE_READER_SERVICE_PORT"], "/read/jobs", data=req, protocol="tcp")
+
+			except PipelineServiceError as e:
+				pass
+
+			else:
+				pass
 
 		else:
 			self.response.set_status(404, "Resource {r} not found".format(r=self.request.path))
@@ -215,15 +320,18 @@ class Log(webapp2.RequestHandler):
 
 
 app = webapp2.WSGIApplication([
-	(JOBS_LIST_CREATE_EXP, Jobs),
+	(JOBS_LIST_EXP, Jobs),
+	(JOBS_CREATE_EXP, Jobs),
 	(JOB_DESCRIBE_EXP, Jobs),
 	(JOB_EDIT_EXP, Jobs),
 	(JOB_CANCEL_EXP, Jobs),
 	(JOB_RESTART_EXP, Jobs),
-	(CONFIG_VIEW_INIT_EXP, Config),
+	(CONFIG_VIEW_EXP, Config),
 	(CONFIG_EDIT_EXP, Config),
-	(DATADISKS_LIST_CREATE_EXP, DataDisk),
-	(DATADISK_DESCRIBE_DELETE_EXP, DataDisk),
+	(DATADISKS_LIST_EXP, DataDisk),
+	(DATADISKS_CREATE_EXP, DataDisk),
+	(DATADISK_DESCRIBE_EXP, DataDisk),
+	(DATADISK_DELETE_EXP, DataDisk),
 	(LOG_STDOUT_EXP, Log),
 	(LOG_STDERR_EXP, Log),
 ], debug=True)
