@@ -12,15 +12,8 @@ class PipelineConfigError(Exception):  # TODO: implement
 
 
 class PipelineConfig(SafeConfigParser, object):
-	def __init__(self, path=SERVER_CONFIG_PATH, first_time=False):
+	def __init__(self, from_file=True, path=None, project_id=None, zones=None, scopes=None, service_account_email=None, max_running_jobs=None, autorestart_preempted=None):
 		super(PipelineConfig, self).__init__()
-
-		self.path = path
-
-		try:
-			os.makedirs(os.path.dirname(self.path))
-		except OSError:
-			pass
 
 		self._configParams = {
 			"project_id": {
@@ -55,19 +48,40 @@ class PipelineConfig(SafeConfigParser, object):
 			}
 		}
 
-		if first_time:
-			for option, attrs in self._configParams.iteritems():
-				if not self.has_section(attrs["section"]):
-					self.add_section(attrs["section"])
+		if from_file:
+			self._from_file = True
 
-				if attrs["required"]:
-					val = raw_input(attrs["message"])
-					if len(val) == 0:
-						self.update(attrs["section"], option, attrs["default"], first_time=True)
+			if path is None:
+				self.path = SERVER_CONFIG_PATH
+			else:
+				self.path = path
+
+			try:
+				os.makedirs(os.path.dirname(self.path))
+			except OSError:
+				pass
+
+			self.refresh()
+
+		else:
+			self._from_file = False
+
+			try:
+				self.project_id = project_id
+
+			except AttributeError as e:
+				raise PipelineConfigError("Couldn't create config: {reason}".format(reason=e))
+
+			else:
+				for o in self._configParams.keys():
+					s = self._configParams[o]["section"]
+
+					if locals[o] is None:
+						v = self._configParams[o]["default"]
 					else:
-						self.update(attrs["section"], option, val, first_time=True)
+						v = locals[o]
 
-		self.refresh()
+					self.update(s, o, v)
 
 	def update(self, section, option, value, first_time=False):
 		if option not in self._configParams.keys():
@@ -81,11 +95,11 @@ class PipelineConfig(SafeConfigParser, object):
 
 		self.set(section, str(option), str(value))
 
-		with open(self.path, 'w') as f:
-			self.write(f)
+		if self._from_file:
+			with open(self.path, 'w') as f:
+				self.write(f)
 
-		if not first_time:
-			self.refresh()
+		self.refresh()
 
 	def watch(self):
 		# watch changes to the config file -- needs to be run in a separate thread
@@ -99,7 +113,9 @@ class PipelineConfig(SafeConfigParser, object):
 
 	def _verify(self):
 		try:
-			self.read(self.path)
+			if self._from_file:
+				self.read(self.path)
+
 		except IOError as e:
 			raise PipelineConfigError("Couldn't open {path}: {reason}".format(path=self.path, reason=e))
 

@@ -1,4 +1,3 @@
-import os
 import json
 import string
 import requests
@@ -12,9 +11,11 @@ from jinja2 import Template
 from googleapiclient import discovery
 from oauth2client.client import GoogleCredentials
 from googleapiclient.errors import HttpError
-from pipelines.paths import *
-from pipelines.schema import PipelineSchema
-from pipelines.builder import PipelineBuilder, PipelineSchemaValidationError, PipelineSubmitError
+from paths import *
+from schema import PipelineSchema
+from builder import PipelineBuilder, PipelineSchemaValidationError, PipelineSubmitError
+from queue import PipelineQueue, PipelineExchange
+from config import PipelineConfig, PipelineConfigError
 
 
 # Kubernetes API URIs
@@ -36,7 +37,7 @@ API_HEADERS = {
 class DataDiskError(Exception):
 	def __init__(self, msg):
 		super(DataDiskError, self).__init__()
-		msg = msg
+		self.msg = msg
 
 
 class DataDisk(object):
@@ -66,33 +67,53 @@ class DataDisk(object):
 				"zone": "projects/{projectId}/zones/{zone}".format(projectId=projectId, zone=z),
 				"name": disk_name,
 				"sizeGb": disk_size,
-				"type": "projects/{projectId}/zones/{zone}/diskTypes/{type}".format(projectId=projectId, zone=z, type=diskTypes[disk_type])
+				"type": "projects/{projectId}/zones/{zone}/diskTypes/{type}".format(projectId=projectId, zone=z,
+				                                                                    type=diskTypes[disk_type])
 			}
 
 			try:
 				resp = gce.disks().insert(project=projectId, zone=z, body=body).execute()
 			except HttpError as e:
-				raise DataDiskError("Couldn't create data disk {n}: {reason}".format(n=name, reason=e))
+				raise DataDiskError("Couldn't create data disk {n}: {reason}".format(n=disk_name, reason=e))
 
 			while True:
 				try:
-					result = gce.zoneOperations().get(project=projectId, zone=z,  operation=resp['name']).execute()
+					result = gce.zoneOperations().get(project=projectId, zone=z, operation=resp['name']).execute()
 				except HttpError:
 					break
 				else:
 					if result['status'] == 'DONE':
 						break
 
-			# update the database ...
-			PipelineService.sendRequest()
-
 	@staticmethod
-	def delete():  # TODO: implement
-		pass
+	def delete(config, disk_name=None, disk_zone=None):  # TODO: implement
+		# submit a request to the gce api for a new disk with the given parameters
+		# if inputs is not None, run a pipeline job to populate the disk
+		projectId = config.project_id
+		zones = [disk_zone if disk_zone is not None else x for x in config.zones.split(',')]
 
-	@staticmethod
-	def describe():  # TODO: implement
-		pass
+		credentials = GoogleCredentials.get_application_default()
+		http = credentials.authorize(httplib2.Http())
+
+		if credentials.access_token_expired:
+			credentials.refresh(http)
+
+		gce = discovery.build('compute', 'v1', http=http)
+
+		for z in zones:
+			try:
+				resp = gce.disks().delete(project=projectId, zone=z, disk=disk_name).execute()
+			except HttpError as e:
+				raise DataDiskError("Couldn't delete data disk {n}: {reason}".format(n=disk_name, reason=e))
+
+			while True:
+				try:
+					result = gce.zoneOperations().get(project=projectId, zone=z, operation=resp['name']).execute()
+				except HttpError:
+					break
+				else:
+					if result['status'] == 'DONE':
+						break
 
 
 class PipelineServiceError(Exception):
@@ -242,8 +263,6 @@ class PipelineService:
 			try:
 				instanceGroupName = subprocess.check_output(["gcloud", "compute", "instance-groups", "list", "--regexp", "^gke-{cluster}-.*-group$".format(cluster=clusterName)]).split('\n')[1].split(' ')[0]
 				instanceList = subprocess.check_output(["gcloud", "compute", "instance-groups", "list-instances", instanceGroupName]).split('\n')[1:-1]
-				for instance in instanceList:
-					pass  # TODO: set cluster hosts in client configuration
 
 			except subprocess.CalledProcessError as e:
 				print "ERROR: Couldn't get cluster hostnames: {reason}".format(reason=e)
@@ -251,7 +270,7 @@ class PipelineService:
 
 			# run kubectl in proxy mode in a background process
 			try:
-				subprocess.Popen(["kubectl", "proxy", "--port", "8080"])  # TODO: document the in-use ports, and/or figure out how to "detect" them (manage in configuration?)
+				subprocess.Popen(["kubectl", "proxy", "--port", "8080"])  # TODO: document the in-use ports, and/or figure out how to "detect" them (manage in configuration?); Also may need to run this command every time you log in...
 			except ValueError as e:
 				print "ERROR: couldn't set up kubectl proxy: {reason}".format(reason=e)
 				exit(-1)
@@ -292,6 +311,9 @@ class PipelineService:
 		# authentication
 		refreshAccessToken()
 		API_HEADERS.update({"Authorization": "Bearer {token}".format(token=credentials.access_token)})
+
+		# dummy config
+		config = PipelineConfig(project_id=projectId)
 
 		# load/render/submit the request templates
 
@@ -338,7 +360,7 @@ class PipelineService:
 
 		# pipeline front-end rc
 		with open(os.path.join(TEMPLATES_PATH, "pipeline-frontend-rc.json.jinja2")) as f:
-			pipelineFrontendRcSpec = prepareTemplate(f, replicas=5)  # TODO: add replication factor to local config
+			pipelineFrontendRcSpec = prepareTemplate(f, replicas=5)  # TODO: add replication factor to local config or cli
 
 		createResource(rcUrl, API_HEADERS, pipelineFrontendRcSpec)
 
@@ -385,26 +407,48 @@ class PipelineService:
 		createResource(rcUrl, API_HEADERS, pipelineCancellerRcSpec)
 
 		# TODO: port forward the rabbitmq service to a local port
+		#
 
 		# set up the watch
 		PipelineExchange('WATCH_EXCHANGE')
 
 		# run pipeline jobs for creating/populating the service disks
-		createDisks = PipelineBuilder()
+		createDisks = PipelineBuilder(config)
+
+		configReq = {
+			"disk_name": "pipelines-service-config",  # TODO: make unique
+			"disk_type": "PERSISTENT_SSD",
+			"disk_size": 10,
+			"disk_zone": zone
+		}
 
 		try:
-			configDisk = DataDisk()  # TODO: params
+			#PipelineService.sendRequest("localhost", "80", "/datadisks/create", data=configReq)
+			DataDisk.create(config, disk_name="pipelines-service-config", disk_size=10, disk_type="PERSISTENT_SSD", zone=zone)
 
+		#except PipelineServiceError as e:
 		except DataDiskError as e:
-			raise PipelineServiceError("Couldn't create the service volume (config): {reason}".format(reason=e))
+			print "ERROR: Couldn't create the service volume (config): {reason}".format(reason=e)
+			exit(-1)
+
+		databaseReq = {
+			"disk_name": "pipelines-service-db",  # TODO: make unique
+			"disk_type": "PERSISTENT_SSD",
+			"disk_size": 10,  # TODO: add to local config or cli
+			"disk_zone": zone
+		}
 
 		try:
-			databaseDisk = DataDisk()  # TODO: params
+			#configDisk = PipelineService.sendRequest("localhost", "80", "/datadisks/create", data=databaseReq)
+			DataDisk.create(config, disk_name="pipelines-service-db", disk_size=100, disk_type="PERSISTENT_SSD", zone=zone)
 
+		#except PipelineServiceError as e:
 		except DataDiskError as e:
-			raise PipelineServiceError("Couldn't create the service volume (database): {reason}".format(reason=e))
+			print "ERROR: Couldn't create the service volume (database): {reason}".format(reason=e)
+			exit(-1)
 
-		configDiskJob = PipelineSchema()  # TODO: params
+		# TODO: start here
+		configDiskJob = PipelineSchema("pipelines-disk", config)  # TODO: params
 		configDiskJob.addExistingDisk()  # TODO: params
 		databaseDiskJob = PipelineSchema()  # TODO: params
 		databaseDiskJob.addExistingDisk()  # TODO: params
