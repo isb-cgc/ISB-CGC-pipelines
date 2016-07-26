@@ -19,7 +19,7 @@ class PipelineDatabase(object):
 			pass  # TODO: determine best production grade relational database to use
 
 		elif config.db == "sqlite":
-			self._dbConn = sqlite3.connect(os.path.join(os.path.dirname(config.path), "isb-cgc-pipelines.db"))
+			self._dbConn = sqlite3.connect(os.environ["PIPELINES_DB"])
 
 		self._pipelinesDb = self._dbConn.cursor()
 

@@ -1,0 +1,80 @@
+#!/usr/bin/env python
+import argparse
+from pipelines.db import PipelineDatabase, PipelineDatabaseError
+from pipelines.config import PipelineConfig, PipelineConfigError
+
+if __name__ == "__main__":
+	parser = argparse.ArgumentParser()
+	parser.add_argument("--projectId")
+
+	args = parser.parse_args()
+
+	try:
+		c = PipelineConfig(projectId=args.projectId)
+	except PipelineConfigError as e:
+		print "ERROR: couldn't initialize db: {reason}".format(reason=e)
+		exit(-1)
+
+	try:
+		p = PipelineDatabase(c)
+	except PipelineDatabaseError as e:
+		print "ERROR: couldn't initialize db: {reason}".format(reason=e)
+		exit(-1)
+
+	jobs = {
+		"job_id": "INTEGER PRIMARY KEY AUTOINCREMENT",
+		"operation_id": "VARCHAR(128)",
+		"instance_name": "VARCHAR(128)",
+		"pipeline_name": "VARCHAR(128)",
+		"tag": "VARCHAR(128)",
+		"current_status": "VARCHAR(128)",
+		"preemptions": "INTEGER",
+		"gcs_log_path": "VARCHAR(128)",
+		"stdout_log": "VARCHAR(128)",
+		"stderr_log": "VARCHAR(128)",
+		"create_time": "VARCHAR(128)",
+		"end_time": "VARCHAR(128)",
+		"processing_time": "FLOAT",
+		"request": "TEXT"
+	}
+
+	jobDeps = {
+		"row_id": "INTEGER PRIMARY KEY AUTOINCREMENT",
+		"parent_id": "INTEGER",
+		"child_id": "INTEGER"
+	}
+
+	jobArchive = {
+		"row_id": "INTEGER PRIMARY KEY AUTOINCREMENT",
+		"job_id": "INTEGER",
+		"operation_id": "VARCHAR(128)",
+		"instance_name": "VARCHAR(128)",
+		"pipeline_name": "VARCHAR(128)",
+		"tag": "VARCHAR(128)",
+		"current_status": "VARCHAR(128)",
+		"preemptions": "INTEGER",
+		"gcs_log_path": "VARCHAR(128)",
+		"stdout_log": "VARCHAR(128)",
+		"stderr_log": "VARCHAR(128)",
+		"create_time": "VARCHAR(128)",
+		"end_time": "VARCHAR(128)",
+		"processing_time": "FLOAT",
+		"request": "TEXT"
+	}
+
+	dataDisks = {
+		"row_id": "INTEGER PRIMARY KEY AUTOINCREMENT",
+		"job_id": "INTEGER",
+		"disk_name": "VARCHAR(128)",
+		"disk_zone": "VARCHAR(128)"
+	}
+
+	try:
+		p.create("jobs", "table", jobs)
+		p.create("job_dependencies", "table", jobDeps)
+		p.create("job_archive", "table", jobArchive)
+		p.create("data_disks", "table", dataDisks)
+
+	except PipelineDatabaseError as e:
+		print "ERROR: couldn't initialize db: {reason}".format(reason=e)
+		exit(-1)

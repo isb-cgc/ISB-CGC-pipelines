@@ -48,13 +48,13 @@ class PipelineConfig(SafeConfigParser, object):
 			}
 		}
 
+		if path is None:
+			self.path = SERVER_CONFIG_PATH
+		else:
+			self.path = path
+
 		if from_file:
 			self._from_file = True
-
-			if path is None:
-				self.path = SERVER_CONFIG_PATH
-			else:
-				self.path = path
 
 			try:
 				os.makedirs(os.path.dirname(self.path))
@@ -95,7 +95,7 @@ class PipelineConfig(SafeConfigParser, object):
 
 		self.set(section, str(option), str(value))
 
-		if self._from_file:
+		if self.path is not None:
 			with open(self.path, 'w') as f:
 				self.write(f)
 

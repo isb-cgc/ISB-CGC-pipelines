@@ -1,0 +1,49 @@
+{
+      "apiVersion": "v1",
+      "kind": "ReplicationController",
+      "metadata": {
+          "name": "temp-rabbitmq-server"
+      },
+      "spec": {
+          "replicas": 1,
+          "selector": {
+              "role": "rabbitmq-server"
+          },
+          "template": {
+              "metadata": {
+                  "labels": {
+                      "role": "rabbitmq-server"
+                  }
+              },
+              "spec": {
+                  "containers": [
+                      {
+                          "name": "temp-rabbitmq-server",
+                          "image": "b.gcr.io/isb-cgc-public-docker-images/isb-cgc-pipelines:latest",
+                          "ports": [
+                              {
+                                  "name": "temp-rabbitmq-server",
+                                  "containerPort": 3308
+                              }
+                          ],
+                          "volumeMounts": [
+                              {
+                                  "name": "temp-data",
+                                  "mountPath": "/temp-data",
+                                  "readOnly": "true"
+                              }
+                          ]
+                      }
+                  ],
+                  "volumes": [
+                      {
+                          "name": "temp-data",
+                          "hostPath": {
+                              "path": "/tmp/rabbitmq-temp-data"
+                          }
+                      }
+                  ]
+              }
+          }
+      }
+  }

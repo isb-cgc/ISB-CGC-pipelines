@@ -1,4 +1,5 @@
 import json
+import uuid
 import string
 import requests
 import httplib2
@@ -179,11 +180,15 @@ class PipelineService:
 
 			# if the response isn't what's expected, raise an exception
 			if response.status_code != 200:
-				print "ERROR: resource deletion failed: {reason}".format(reason=response.status_code)
+				print "ERROR: resource creation failed: {reason}".format(reason=response.status_code)
 				exit(-1)  # probably should raise an exception
 
 		def deleteResource(url, headers, resourceName):
-			SESSION.delete(os.path.join(url, resourceName))
+			response = SESSION.delete(os.path.join(url, resourceName), headers=headers)
+			# if the response isn't what's expected, raise an exception
+			if response.status_code != 200:
+				print "ERROR: resource deletion failed: {reason}".format(reason=response.status_code)
+				exit(-1)  # probably should raise an exception
 
 		def createClusterAdminPassword():
 			return ''.join(SystemRandom().choice(string.ascii_uppercase + string.ascii_lowercase + string.digits) for _ in range(16))
@@ -366,7 +371,7 @@ class PipelineService:
 
 		# temporary sqlite-reader-rc (with hostpath volume)
 		with open(os.path.join(TEMPLATES_PATH, "temporary-sqlite-reader-rc.json.jinja2")) as f:
-			temporarySqliteReaderRcSpec = prepareTemplate(f)  # TODO: kwargs
+			temporarySqliteReaderRcSpec = prepareTemplate(f)
 
 		createResource(rcUrl, API_HEADERS, temporarySqliteReaderRcSpec)
 
@@ -384,7 +389,7 @@ class PipelineService:
 
 		# temporary rabbitmq-rc (with hostpath volume)
 		with open(os.path.join(TEMPLATES_PATH, "temporary-rabbitmq-rc.json.jinja2")) as f:
-			temporaryConfigWriterRcSpec = prepareTemplate(f)  # TODO: kwargs
+			temporaryRabbitmqRcSpec = prepareTemplate(f)  # TODO: kwargs
 
 		createResource(rcUrl, API_HEADERS, temporaryConfigWriterRcSpec)
 
@@ -447,23 +452,82 @@ class PipelineService:
 			print "ERROR: Couldn't create the service volume (database): {reason}".format(reason=e)
 			exit(-1)
 
-		# TODO: start here
-		configDiskJob = PipelineSchema("pipelines-disk", config)  # TODO: params
-		configDiskJob.addExistingDisk()  # TODO: params
-		databaseDiskJob = PipelineSchema()  # TODO: params
-		databaseDiskJob.addExistingDisk()  # TODO: params
+		msbReq = {
+			"disk_name": "pipelines-service-msgs",  # TODO: make unique
+			"disk_type": "PERSISTENT_SSD",
+			"disk_size": 10,  # TODO: add to local config or cli
+			"disk_zone": zone
+		}
+
+		try:
+			# configDisk = PipelineService.sendRequest("localhost", "80", "/datadisks/create", data=databaseReq)
+			DataDisk.create(config, disk_name="pipelines-service-msgs", disk_size=10, disk_type="PERSISTENT_SSD",
+			                zone=zone)
+
+		# except PipelineServiceError as e:
+		except DataDiskError as e:
+			print "ERROR: Couldn't create the service volume (msgs): {reason}".format(reason=e)
+			exit(-1)
+
+		# create a temporary bucket for log outputs
+		u = uuid.uuid4()
+
+		try:
+			subprocess.check_call(["gsutil", "mb", "pipelines-tmp-{uuid}".format(uuid=u)])
+		except subprocess.CalledProcessError as e:
+			print "ERROR: couldn't create temporary bucket in GCS: {reason}".format(reason=e)
+			exit(-1)
+
+		# create and upload the configuration to the temporary bucket
+
+		configDiskJob = PipelineSchema("bootstrap-config-disk", config,
+		                               "gs://pipelines-tmp-{uuid}".format(uuid=u),
+		                               "gcr.io/isb-cgc-public-docker-images/isb-cgc-pipelines",
+		                               cmd="cd /etc/isb-cgc-pipelines && touch config && bootstrap-config --projectId {p}".format(p=projectId),
+		                               cores=1,
+		                               mem=2,
+		                               zone=zone,
+		                               tag=u)
+
+		configDiskJob.addExistingDisk("pipelines-service-config", "PERSISTENT_SSD", projectId, zone, "/etc/isb-cgc-pipelines", autodelete=False)
+
+		databaseDiskJob = PipelineSchema("bootstrap-db-disk", config,
+		                               "gs://pipelines-tmp-{uuid}".format(uuid=u),
+		                               "gcr.io/isb-cgc-public-docker-images/isb-cgc-pipelines",
+		                               cmd="bootstrap-db".format(p=projectId),
+		                               cores=1,
+		                               mem=2,
+		                               zone=zone,
+		                               tag=u)
+
+		databaseDiskJob.addExistingDisk("pipelines-service-db", "PERSISTENT_SSD", projectId, zone, "/var/lib/isb-cgc-pipelines", autodelete=False)
+
+		messagingDiskJob = PipelineSchema("bootstrap-msg-disk", config,
+		                                 "gs://pipelines-tmp-{uuid}".format(uuid=u),
+		                                 "gcr.io/isb-cgc-public-docker-images/isb-cgc-pipelines",
+		                                 cmd="ls",
+		                                 cores=1,
+		                                 mem=2,
+		                                 zone=zone,
+		                                 tag=u)
+
+		databaseDiskJob.addExistingDisk("pipelines-service-msgs", "PERSISTENT_SSD", projectId, zone,
+		                                "/var/lib/isb-cgc-pipelines", autodelete=False)
 
 		createDisks.addStep(configDiskJob)
 		createDisks.addStep(databaseDiskJob)
+		createDisks.addStep(messagingDiskJob)
 
 		try:
 			jobIds = createDisks.run()
 
 		except PipelineSchemaValidationError as e:
-			pass  # TODO: print error and exit
+			print "ERROR: Couldn't bootstrap volume disks: {reason}".format(reason=e)
+			exit(-1)
 
 		except PipelineSubmitError as e:
-			pass  # TODO: print error and exit
+			print "ERROR: Couldn't bootstrap volume disks: {reason}".format(reason=e)
+			exit(-1)
 
 		# set a watch on each job id and wait for the jobs to complete
 		error = 0
@@ -483,24 +547,64 @@ class PipelineService:
 
 			exit(-1)
 
+		# remove the temporary bucket and contents
+		try:
+			subprocess.check_call(["gsutil", "rm", "gs://pipelines-tmp-{uuid}/*".format(uuid=u)])
+			subprocess.check_call(["gsutil", "rb", "gs://pipelines-tmp-{uuid}".format(uuid=u)])
+		except subprocess.CalledProcessError as e:
+			print "ERROR: couldn't cleanup temp bucket: {reason}".format(reason=e)
+
+		# delete the temporary rcs
+		deleteResource(rcUrl, API_HEADERS, temporaryConfigWriterRcSpec["metadata"]["name"])
+		deleteResource(rcUrl, API_HEADERS, temporarySqliteReaderRcSpec["metadata"]["name"])
+		deleteResource(rcUrl, API_HEADERS, temporarySqliteWriterRcSpec["metadata"]["name"])
+		deleteResource(rcUrl, API_HEADERS, temporaryRabbitmqRcSpec["metadata"]["name"])
+
 		# create the permanent volumes
+
 		# permanent (pd) sqlite volume
 		with open(os.path.join(TEMPLATES_PATH, "sqlite-volume.json.jinja2")) as f:
 			sqliteVolume = prepareTemplate(f)  # TODO: kwargs
+
+		createResource(volumeUrl, API_HEADERS, sqliteVolume)
 
 		# permanent (pd) config volume
 		with open(os.path.join(TEMPLATES_PATH, "config-volume.json.jinja2")) as f:
 			configVolume = prepareTemplate(f)  # TODO: kwargs
 
+		createResource(volumeUrl, API_HEADERS, configVolume)
+
+		# permanent (pd) rabbitmq volume
+		with open(os.path.join(TEMPLATES_PATH, "rabbitmq-volume.json.jinja2")) as f:
+			rabbitmqVolume = prepareTemplate(f)  # TODO: kwargs
+
+		createResource(volumeUrl, API_HEADERS, rabbitmqVolume)
+
 		# restart the sqlite and rabbitmq RCs with the newly created volumes
+
+		# sqlite-reader rc
+		with open(os.path.join(TEMPLATES_PATH, "sqlite-reader-rc.json.jinja2")) as f:
+			sqliteReaderRcSpec = prepareTemplate(f, pdName="")  # TODO: pdName
+
+		createResource(rcUrl, API_HEADERS, sqliteReaderRcSpec)
+
+		# sqlite-writer rc
+		with open(os.path.join(TEMPLATES_PATH, "sqlite-writer-rc.json.jinja2")) as f:
+			sqliteWriterRcSpec = prepareTemplate(f, pdName="")  # TODO: pdName
+
+		createResource(rcUrl, API_HEADERS, sqliteWriterRcSpec)
+
+		# config-writer rc
+		with open(os.path.join(TEMPLATES_PATH, "config-writer-rc.json.jinja2")) as f:
+			configWriterRcSpec = prepareTemplate(f, pdName="")  # TODO: pdName
+
+		createResource(rcUrl, API_HEADERS, configWriterRcSpec)
 
 		# rabbitmq rc
 		with open(os.path.join(TEMPLATES_PATH, "rabbitmq-rc.json.jinja2")) as f:
 			rabbitmqRcSpec = prepareTemplate(f, pdName="")  # TODO: pdName
 
-		deleteResource(rcUrl, API_HEADERS, "rabbitmq-server")
 		createResource(rcUrl, API_HEADERS, rabbitmqRcSpec)
-
 
 		print "Service bootstrap successful!"
 

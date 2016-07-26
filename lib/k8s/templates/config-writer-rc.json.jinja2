@@ -2,27 +2,27 @@
       "apiVersion": "v1",
       "kind": "ReplicationController",
       "metadata": {
-          "name": "temp-sqlite-reader"
+          "name": "config-writer"
       },
       "spec": {
           "replicas": 1,
           "selector": {
-              "role": "sqlite-reader"
+              "role": "config-writer"
           },
           "template": {
               "metadata": {
                   "labels": {
-                      "role": "sqlite-reader"
+                      "role": "config-writer"
                   }
               },
               "spec": {
                   "containers": [
                       {
-                          "name": "temp-sqlite-reader",
+                          "name": "config-writer",
                           "image": "b.gcr.io/isb-cgc-public-docker-images/isb-cgc-pipelines:latest",
                           "ports": [
                               {
-                                  "name": "temp-sqlite-reader",
+                                  "name": "config-writer",
                                   "containerPort": 3308
                               }
                           ],
@@ -39,7 +39,7 @@
                       {
                           "name": "temp-data",
                           "hostPath": {
-                              "path": "/tmp/sqlite-reader-temp-data"
+                              "path": "/tmp/config-temp-data"
                           }
                       }
                   ]

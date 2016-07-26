@@ -48,7 +48,8 @@ class PipelineBuilder(object):
 		self._validateSchema()
 
 		# initialize job configs
-		self._submitSchema()
+		jobIds = self._submitSchema()
+		return jobIds
 
 	def _generateSchema(self):
 		self._schema.update({"pipelines": self._pipelines})
@@ -165,3 +166,5 @@ class PipelineBuilder(object):
 					self._pipelineQueue.publish(json.dumps(msg))
 				except PipelineQueueError as e:
 					raise PipelineSubmitError("Couldn't submit job to queue: {reason}".format(reason=e))
+
+		return jobIdMap.itervalues()

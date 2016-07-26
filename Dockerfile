@@ -14,6 +14,7 @@ RUN cp /usr/local/ISB-CGC-pipelines/lib/examples/utility_scripts/getChecksum /us
 RUN cp /usr/local/ISB-CGC-pipelines/lib/examples/utility_scripts/getFilenames /usr/bin/getFilenames
 ENV PYTHONPATH /usr/local/lib/python2.7:/usr/local/ISB-CGC-pipelines/lib
 ENV PIPELINES_CONFIG /etc/isb-cgc-pipelines/config
+ENV PIPELINES_DB /var/lib/isb-cgc-pipelines/isb-cgc-pipelines.db
 EXPOSE 80
 
 
