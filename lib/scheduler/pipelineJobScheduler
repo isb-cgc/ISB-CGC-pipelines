@@ -31,6 +31,11 @@ def main(config):
 		if method:
 			body = json.loads(body)
 
+			jobInfo = pipelineDbUtils.getJobInfo(select=["current_status"], where={"job_id": body["job_id"]})[0]
+
+			if jobInfo.current_status != "WAITING":
+				pipelineDbUtils.updateJob(body["job_id"], keyName="job_id", setValues={"current_status": "WAITING"})
+
 			if credentials.access_token_expired:
 				credentials.refresh(http)
 
@@ -73,11 +78,6 @@ def main(config):
 						ssdTest = ssdTotal - (ssdUsage + d["sizeGb"])
 					elif d["type"] == "PERSISTENT_HDD":
 						hddTest = hddTotal - (hddUsage + d["sizeGb"])
-
-				PipelineSchedulerUtils.writeStdout("Max jobs test: {m}".format(m=maxJobsTest))
-				PipelineSchedulerUtils.writeStdout("CPU test: {c}".format(c=cpuTest))
-
-			jobInfo = pipelineDbUtils.getJobInfo(select=["current_status"], where={"job_id": body["job_id"]})[0]
 
 			if jobInfo.current_status != "CANCELLED":
 				try:
