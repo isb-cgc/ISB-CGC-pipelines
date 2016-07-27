@@ -74,6 +74,9 @@ def main(config):
 					elif d["type"] == "PERSISTENT_HDD":
 						hddTest = hddTotal - (hddUsage + d["sizeGb"])
 
+				PipelineSchedulerUtils.writeStdout("Max jobs test: {m}".format(m=maxJobsTest))
+				PipelineSchedulerUtils.writeStdout("CPU test: {c}".format(c=cpuTest))
+
 			jobInfo = pipelineDbUtils.getJobInfo(select=["current_status"], where={"job_id": body["job_id"]})[0]
 
 			if jobInfo.current_status != "CANCELLED":
