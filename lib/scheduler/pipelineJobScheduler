@@ -31,6 +31,9 @@ def main(config):
 		if method:
 			body = json.loads(body)
 
+			if credentials.access_token_expired:
+				credentials.refresh(http)
+
 			# get quota information
 			cpuUsage = 0
 			hddUsage = 0
@@ -39,9 +42,6 @@ def main(config):
 			cpuTotal = 0
 			hddTotal = 0
 			ssdTotal = 0
-
-			if credentials.access_token_expired:
-				credentials.refresh(http)
 
 			maxJobsTest = -1
 			cpuTest = -1
@@ -55,20 +55,20 @@ def main(config):
 					quotas = compute.regions().get(project=config.project_id, region=region).execute()["quotas"]
 					for q in quotas:
 						if q["metric"] == "CPUS":
-							cpuTotal += q["limit"]
-							cpuUsage = q["usage"]
+							cpuTotal += int(q["limit"])
+							cpuUsage = int(q["usage"])
 						if q["metric"] == "DISKS_TOTAL_GB":
-							hddTotal += q["limit"]
-							hddUsage += q["usage"]
+							hddTotal += int(q["limit"])
+							hddUsage += int(q["usage"])
 						if q["metric"] == "SSD_TOTAL_GB":
-							ssdTotal += q["limit"]
-							ssdUsage += q["usage"]
+							ssdTotal += int(q["limit"])
+							ssdUsage += int(q["usage"])
 
 				currentlyRunning = len(pipelineDbUtils.getJobInfo(select=["job_id"], where={"current_status": "RUNNING"}))
 				maxJobsTest = int(config.max_running_jobs) - (currentlyRunning + 1)
 				cpuTest = cpuTotal - (cpuUsage + body["request"]["pipelineArgs"]["resources"]["minimumCpuCores"])
 				hddTest = hddTotal - (hddUsage + 10)  # each job uses at least 10GB of HDD by default
-				ssdTest = 1
+				ssdTest = ssdTotal - (ssdUsage + 10)
 
 				for d in body["request"]["pipelineArgs"]["resources"]["disks"]:
 					if d["type"] == "PERSISTENT_SSD":
