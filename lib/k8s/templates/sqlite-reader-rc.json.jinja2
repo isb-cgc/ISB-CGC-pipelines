@@ -1,0 +1,55 @@
+{
+      "apiVersion": "v1",
+      "kind": "ReplicationController",
+      "metadata": {
+          "name": "sqlite-reader"
+      },
+      "spec": {
+          "replicas": 1,
+          "selector": {
+              "role": "sqlite-reader"
+          },
+          "template": {
+              "metadata": {
+                  "labels": {
+                      "role": "sqlite-reader"
+                  }
+              },
+              "spec": {
+                  "containers": [
+                      {
+                          "name": "sqlite-reader",
+                          "image": "b.gcr.io/isb-cgc-public-docker-images/isb-cgc-pipelines:latest",
+                          "cmd": ["sqliteServer", "--port", "3308"],
+                          "ports": [
+                              {
+                                  "name": "sqlite-reader",
+                                  "containerPort": 3308
+                              }
+                          ],
+                          "volumeMounts": [
+                              {
+                                  "name": "db",
+                                  "mountPath": "/var/lib/isb-cgc-pipelines/db",
+                                  "readOnly": "true"
+                              },
+                              {
+                                  "name": "config",
+                                  "mountPath": "/var/lib/isb-cgc-pipelines/config",
+                                  "readOnly": "true"
+                              }
+                          ]
+                      }
+                  ],
+                  "volumes": [
+                      {
+                          "name": "db"
+                      },
+                      {
+                          "name": "config"
+                      }
+                  ]
+              }
+          }
+      }
+  }

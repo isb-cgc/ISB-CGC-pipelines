@@ -1,0 +1,17 @@
+{
+    "kind": "Service",
+    "apiVersion": "v1",
+    "metadata": {
+        "name": "config-writer"
+    },
+    "spec": {
+        "ports": [
+            {
+                "port": 80
+            }
+        ],
+        "selector": {
+                "role": "config-writer"
+        }
+    }
+}

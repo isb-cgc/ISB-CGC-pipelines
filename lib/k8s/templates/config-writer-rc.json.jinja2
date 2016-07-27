@@ -20,27 +20,25 @@
                       {
                           "name": "config-writer",
                           "image": "b.gcr.io/isb-cgc-public-docker-images/isb-cgc-pipelines:latest",
+                          "cmd": ["configServer", "--port", "3310"],
                           "ports": [
                               {
                                   "name": "config-writer",
-                                  "containerPort": 3308
+                                  "containerPort": 3310
                               }
                           ],
                           "volumeMounts": [
                               {
-                                  "name": "temp-data",
-                                  "mountPath": "/temp-data",
-                                  "readOnly": "true"
+                                  "name": "config",
+                                  "mountPath": "/etc/isb-cgc-pipelines/config",
+                                  "readOnly": "false"
                               }
                           ]
                       }
                   ],
                   "volumes": [
                       {
-                          "name": "temp-data",
-                          "hostPath": {
-                              "path": "/tmp/config-temp-data"
-                          }
+                          "name": "config"
                       }
                   ]
               }

@@ -334,6 +334,12 @@ class PipelineService:
 		ensureCluster()
 		configureClusterAccess()
 
+		try:
+			node = subprocess.check_output(["kubectl", "get", "nodes"]).split('\n')[1].split(' ')[0]
+		except subprocess.CalledProcessError as e:
+			print "ERROR: couldn't get cluster host name: {reason}".format(reason=e)
+			exit(-1)
+
 		serviceUrl = API_ROOT + SERVICES_URI.format(namespace=namespaceSpec["metadata"]["name"])
 		rcUrl = API_ROOT + REPLICATION_CONTROLLERS_URI.format(namespace=namespaceSpec["metadata"]["name"])
 		volumeUrl = API_ROOT + PERSISTENT_VOLUMES_URI.format(namespace=namespaceSpec["metadata"]["name"])
@@ -363,35 +369,65 @@ class PipelineService:
 
 		createResource(serviceUrl, API_HEADERS, rabbitmqServiceSpec)
 
-		# pipeline front-end rc
-		with open(os.path.join(TEMPLATES_PATH, "pipeline-frontend-rc.json.jinja2")) as f:
-			pipelineFrontendRcSpec = prepareTemplate(f, replicas=5)  # TODO: add replication factor to local config or cli
+		# temporary config-writer-rc (with hostpath volume)
+		with open(os.path.join(TEMPLATES_PATH, "config-writer-rc.json.jinja2")) as f:
+			configWriterRcSpec = prepareTemplate(f)  # TODO: kwargs
 
-		createResource(rcUrl, API_HEADERS, pipelineFrontendRcSpec)
+		configWriterRcSpec["spec"]["template"]["spec"]["volumes"][0] = {
+			"hostPath": {
+				"path": "/var/lib/isb-cgc-pipelines/config"
+			}
+		}
 
-		# temporary sqlite-reader-rc (with hostpath volume)
-		with open(os.path.join(TEMPLATES_PATH, "temporary-sqlite-reader-rc.json.jinja2")) as f:
-			temporarySqliteReaderRcSpec = prepareTemplate(f)
-
-		createResource(rcUrl, API_HEADERS, temporarySqliteReaderRcSpec)
+		createResource(rcUrl, API_HEADERS, configWriterRcSpec)
 
 		# temporary sqlite-writer-rc (with hostpath volume)
-		with open(os.path.join(TEMPLATES_PATH, "temporary-sqlite-writer-rc.json.jinja2")) as f:
-			temporarySqliteWriterRcSpec = prepareTemplate(f)  # TODO: kwargs
+		with open(os.path.join(TEMPLATES_PATH, "sqlite-writer-rc.json.jinja2")) as f:
+			sqliteWriterRcSpec = prepareTemplate(f)
 
-		createResource(rcUrl, API_HEADERS, temporarySqliteWriterRcSpec)
+		sqliteWriterRcSpec["spec"]["template"]["spec"]["volumes"][0] = {
+			"hostPath": {
+				"path": "/var/lib/isb-cgc-pipelines/db"
+			}
+		}
 
-		# temporary config-writer-rc (with hostpath volume)
-		with open(os.path.join(TEMPLATES_PATH, "temporary-config-writer-rc.json.jinja2")) as f:
-			temporaryConfigWriterRcSpec = prepareTemplate(f)  # TODO: kwargs
+		sqliteWriterRcSpec["spec"]["template"]["spec"]["volumes"][1] = {
+			"hostPath": {
+				"path": "/var/lib/isb-cgc-pipelines/config"
+			}
+		}
 
-		createResource(rcUrl, API_HEADERS, temporaryConfigWriterRcSpec)
+		sqliteWriterRcSpec["spec"]["nodeName"] = node
+
+		createResource(rcUrl, API_HEADERS, sqliteWriterRcSpec)
+
+		# temporary sqlite-reader-rc (with hostpath volume)
+		with open(os.path.join(TEMPLATES_PATH, "sqlite-reader-rc.json.jinja2")) as f:
+			sqliteReaderRcSpec = prepareTemplate(f)
+
+		sqliteReaderRcSpec["spec"]["template"]["spec"]["volumes"][0] = {
+			"hostPath": {
+				"path": "/var/lib/isb-cgc-pipelines/db"
+			}
+		}
+
+		sqliteReaderRcSpec["spec"]["template"]["spec"]["volumes"][1] = {
+			"hostPath": {
+				"path": "/var/lib/isb-cgc-pipelines/config"
+			}
+		}
+
+		sqliteReaderRcSpec["spec"]["nodeName"] = node
+
+		createResource(rcUrl, API_HEADERS, sqliteReaderRcSpec)
+
+		# TODO: start here
 
 		# temporary rabbitmq-rc (with hostpath volume)
 		with open(os.path.join(TEMPLATES_PATH, "temporary-rabbitmq-rc.json.jinja2")) as f:
-			temporaryRabbitmqRcSpec = prepareTemplate(f)  # TODO: kwargs
+			rabbitmqRcSpec = prepareTemplate(f)  # TODO: kwargs
 
-		createResource(rcUrl, API_HEADERS, temporaryConfigWriterRcSpec)
+		createResource(rcUrl, API_HEADERS, rabbitmqRcSpec)
 
 		# pipeline log handler rc
 		with open(os.path.join(TEMPLATES_PATH, "pipeline-log-handler-rc.json.jinja2")) as f:
@@ -428,10 +464,8 @@ class PipelineService:
 		}
 
 		try:
-			#PipelineService.sendRequest("localhost", "80", "/datadisks/create", data=configReq)
 			DataDisk.create(config, disk_name="pipelines-service-config", disk_size=10, disk_type="PERSISTENT_SSD", zone=zone)
 
-		#except PipelineServiceError as e:
 		except DataDiskError as e:
 			print "ERROR: Couldn't create the service volume (config): {reason}".format(reason=e)
 			exit(-1)
@@ -444,15 +478,13 @@ class PipelineService:
 		}
 
 		try:
-			#configDisk = PipelineService.sendRequest("localhost", "80", "/datadisks/create", data=databaseReq)
 			DataDisk.create(config, disk_name="pipelines-service-db", disk_size=100, disk_type="PERSISTENT_SSD", zone=zone)
 
-		#except PipelineServiceError as e:
 		except DataDiskError as e:
 			print "ERROR: Couldn't create the service volume (database): {reason}".format(reason=e)
 			exit(-1)
 
-		msbReq = {
+		msgReq = {
 			"disk_name": "pipelines-service-msgs",  # TODO: make unique
 			"disk_type": "PERSISTENT_SSD",
 			"disk_size": 10,  # TODO: add to local config or cli
@@ -460,11 +492,8 @@ class PipelineService:
 		}
 
 		try:
-			# configDisk = PipelineService.sendRequest("localhost", "80", "/datadisks/create", data=databaseReq)
-			DataDisk.create(config, disk_name="pipelines-service-msgs", disk_size=10, disk_type="PERSISTENT_SSD",
-			                zone=zone)
+			DataDisk.create(config, disk_name="pipelines-service-msgs", disk_size=10, disk_type="PERSISTENT_SSD", zone=zone)
 
-		# except PipelineServiceError as e:
 		except DataDiskError as e:
 			print "ERROR: Couldn't create the service volume (msgs): {reason}".format(reason=e)
 			exit(-1)
@@ -555,10 +584,10 @@ class PipelineService:
 			print "ERROR: couldn't cleanup temp bucket: {reason}".format(reason=e)
 
 		# delete the temporary rcs
-		deleteResource(rcUrl, API_HEADERS, temporaryConfigWriterRcSpec["metadata"]["name"])
-		deleteResource(rcUrl, API_HEADERS, temporarySqliteReaderRcSpec["metadata"]["name"])
-		deleteResource(rcUrl, API_HEADERS, temporarySqliteWriterRcSpec["metadata"]["name"])
-		deleteResource(rcUrl, API_HEADERS, temporaryRabbitmqRcSpec["metadata"]["name"])
+		deleteResource(rcUrl, API_HEADERS, configWriterRcSpec["metadata"]["name"])
+		deleteResource(rcUrl, API_HEADERS, sqliteReaderRcSpec["metadata"]["name"])
+		deleteResource(rcUrl, API_HEADERS, sqliteWriterRcSpec["metadata"]["name"])
+		deleteResource(rcUrl, API_HEADERS, rabbitmqRcSpec["metadata"]["name"])
 
 		# create the permanent volumes
 
@@ -581,6 +610,14 @@ class PipelineService:
 		createResource(volumeUrl, API_HEADERS, rabbitmqVolume)
 
 		# restart the sqlite and rabbitmq RCs with the newly created volumes
+		volume = {
+			"name": "rabbitmq-data",
+			"gcePersistentDisk": {
+				"pdName": "{{ pdName }}",
+				"readOnly": "false",
+				"fsType": "ext4"
+			}
+		}
 
 		# sqlite-reader rc
 		with open(os.path.join(TEMPLATES_PATH, "sqlite-reader-rc.json.jinja2")) as f:
@@ -605,6 +642,12 @@ class PipelineService:
 			rabbitmqRcSpec = prepareTemplate(f, pdName="")  # TODO: pdName
 
 		createResource(rcUrl, API_HEADERS, rabbitmqRcSpec)
+
+		# pipeline front-end rc
+		with open(os.path.join(TEMPLATES_PATH, "pipeline-frontend-rc.json.jinja2")) as f:
+			pipelineFrontendRcSpec = prepareTemplate(f, replicas=5)  # TODO: add replication factor to local config or cli
+
+		createResource(rcUrl, API_HEADERS, pipelineFrontendRcSpec)
 
 		print "Service bootstrap successful!"
 
