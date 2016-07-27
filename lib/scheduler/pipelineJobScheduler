@@ -49,7 +49,7 @@ def main(config):
 			ssdTest = -1
 
 			# if the quota isn't maxed, and the number of currently running jobs is less than the user defined max, start the job
-			while cpuTest < 0 and hddTest < 0 and ssdTest < 0 and maxJobsTest < 0:
+			while cpuTest < 0 or hddTest < 0 or ssdTest < 0 or maxJobsTest < 0:
 				for z in config.zones.split(','):
 					region = os.path.basename(compute.zones().get(project=config.project_id, zone=z).execute()["region"])
 					quotas = compute.regions().get(project=config.project_id, region=region).execute()["quotas"]
@@ -65,7 +65,6 @@ def main(config):
 							ssdUsage += int(q["usage"])
 
 				currentlyRunning = len(pipelineDbUtils.getJobInfo(select=["job_id"], where={"current_status": "RUNNING"}))
-				PipelineSchedulerUtils.writeStdout("Currently running jobs: {j}\nMax running jobs: {m}".format(j=currentlyRunning, m=config.max_running_jobs))
 				maxJobsTest = int(config.max_running_jobs) - (currentlyRunning + 1)
 				cpuTest = cpuTotal - (cpuUsage + body["request"]["pipelineArgs"]["resources"]["minimumCpuCores"])
 
