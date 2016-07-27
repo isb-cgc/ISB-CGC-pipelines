@@ -65,7 +65,7 @@ def main(config):
 							ssdUsage += int(q["usage"])
 
 				currentlyRunning = len(pipelineDbUtils.getJobInfo(select=["job_id"], where={"current_status": "RUNNING"}))
-				PipelineSchedulerUtils.writeStdout("Currently running jobs: {j}".format(j=currentlyRunning))
+				PipelineSchedulerUtils.writeStdout("Currently running jobs: {j}\nMax running jobs: {m}".format(j=currentlyRunning, m=config.max_running_jobs))
 				maxJobsTest = int(config.max_running_jobs) - (currentlyRunning + 1)
 				cpuTest = cpuTotal - (cpuUsage + body["request"]["pipelineArgs"]["resources"]["minimumCpuCores"])
 
