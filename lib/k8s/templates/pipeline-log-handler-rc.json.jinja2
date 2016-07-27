@@ -1,0 +1,41 @@
+{
+    "apiVersion": "v1",
+    "kind": "ReplicationController",
+    "metadata": {
+        "name": "pipeline-logs-{{ subscription }}"
+    },
+    "spec": {
+        "replicas": {{ replicas }},
+        "selector": {
+            "role": "pipeline-logs-{{ subscription }}"
+        },
+        "template": {
+            "metadata": {
+                "labels": {
+                    "role": "pipeline-logs-{{ subscription }}"
+                }
+            },
+            "spec": {
+                "containers": [
+                    {
+                        "name": "pipeline-logs-{{ subscription }}",
+                        "image": "b.gcr.io/isb-cgc-public-docker-images/isb-cgc-pipelines:latest",
+                        "command": ["receivePipelineVmLogs", "--config", "\"${PIPELINE_CONFIG}\"", "--subscription", "{{ subscription }}"],
+                        "volumeMounts": [
+                            {
+                                "name": "config",
+                                "mountPath": "/etc/isb-cgc-pipelines/config",
+                                "readOnly": "true"
+                            }
+                        ]
+                    }
+                ],
+                "volumes": [
+                    {
+                        "name": "config"
+                    }
+                ]
+            }
+        }
+    }
+}

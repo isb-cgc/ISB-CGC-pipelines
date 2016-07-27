@@ -421,34 +421,111 @@ class PipelineService:
 
 		createResource(rcUrl, API_HEADERS, sqliteReaderRcSpec)
 
-		# TODO: start here
-
 		# temporary rabbitmq-rc (with hostpath volume)
 		with open(os.path.join(TEMPLATES_PATH, "temporary-rabbitmq-rc.json.jinja2")) as f:
 			rabbitmqRcSpec = prepareTemplate(f)  # TODO: kwargs
 
+		rabbitmqRcSpec["spec"]["template"]["spec"]["volumes"][0] = {
+			"hostPath": {
+				"path": "/var/lib/isb-cgc-pipelines/rabbitmq"
+			}
+		}
+
+		rabbitmqRcSpec["spec"]["nodeName"] = node
+
 		createResource(rcUrl, API_HEADERS, rabbitmqRcSpec)
 
-		# pipeline log handler rc
+		# temporary pipeline frontend (with hostpath volume)
+		with open(os.path.join(TEMPLATES_PATH, "pipeline-frontend-rc.json.jinja2")) as f:
+			pipelineFrontendRcSpec = prepareTemplate(f, replicas=1)  # TODO: add replication factor to local config or cli
+
+		pipelineFrontendRcSpec["spec"]["template"]["spec"]["volumes"][0] = {
+			"hostPath": {
+				"path": "/var/lib/isb-cgc-pipelines/config"
+			}
+		}
+
+		pipelineFrontendRcSpec["spec"]["nodeName"] = node
+
+		createResource(rcUrl, API_HEADERS, pipelineFrontendRcSpec)
+
+		# temporary pipeline log handler rcs (with hostpath volume)
 		with open(os.path.join(TEMPLATES_PATH, "pipeline-log-handler-rc.json.jinja2")) as f:
-			pipelineLogHandlerRcSpec = prepareTemplate(f)  # TODO: kwargs
+			pipelineLogHandlerRcSpec = prepareTemplate(f, replicas=1, subscription="pipelineVmInsert")
+
+		pipelineLogHandlerRcSpec["spec"]["template"]["spec"]["volumes"][0] = {
+			"hostPath": {
+				"path": "/var/lib/isb-cgc-pipelines/config"
+			}
+		}
+
+		pipelineLogHandlerRcSpec["spec"]["nodeName"] = node
 
 		createResource(rcUrl, API_HEADERS, pipelineLogHandlerRcSpec)
 
-		# pipeline scheduler rc
+		with open(os.path.join(TEMPLATES_PATH, "pipeline-log-handler-rc.json.jinja2")) as f:
+			pipelineLogHandlerRcSpec = prepareTemplate(f, replicas=1, subscription="pipelineVmDelete")
+
+		pipelineLogHandlerRcSpec["spec"]["template"]["spec"]["volumes"][0] = {
+			"hostPath": {
+				"path": "/var/lib/isb-cgc-pipelines/config"
+			}
+		}
+
+		pipelineLogHandlerRcSpec["spec"]["nodeName"] = node
+
+		createResource(rcUrl, API_HEADERS, pipelineLogHandlerRcSpec)
+
+		with open(os.path.join(TEMPLATES_PATH, "pipeline-log-handler-rc.json.jinja2")) as f:
+			pipelineLogHandlerRcSpec = prepareTemplate(f, replicas=1, subscription="pipelineVmPreempted")
+
+		pipelineLogHandlerRcSpec["spec"]["template"]["spec"]["volumes"][0] = {
+			"hostPath": {
+				"path": "/var/lib/isb-cgc-pipelines/config"
+			}
+		}
+
+		pipelineLogHandlerRcSpec["spec"]["nodeName"] = node
+
+		createResource(rcUrl, API_HEADERS, pipelineLogHandlerRcSpec)
+
+		# temporary pipeline scheduler rc (with hostpath volume)
 		with open(os.path.join(TEMPLATES_PATH, "pipeline-scheduler-rc.json.jinja2")) as f:
-			pipelineSchedulerRcSpec = prepareTemplate(f)  # TODO: kwargs
+			pipelineSchedulerRcSpec = prepareTemplate(f, replicas=1)
+
+		pipelineSchedulerRcSpec["spec"]["template"]["spec"]["volumes"][0] = {
+			"hostPath": {
+				"path": "/var/lib/isb-cgc-pipelines/config"
+			}
+		}
+
+		pipelineSchedulerRcSpec["spec"]["nodeName"] = node
 
 		createResource(rcUrl, API_HEADERS, pipelineSchedulerRcSpec)
 
-		# pipeline canceller rc
+		# temporary pipeline canceller rc (with hostpath volume)
 		with open(os.path.join(TEMPLATES_PATH, "pipeline-canceller-rc.json.jinja2")) as f:
-			pipelineCancellerRcSpec = prepareTemplate(f)  # TODO: kwargs
+			pipelineCancellerRcSpec = prepareTemplate(f, replicas=1)
+
+		pipelineCancellerRcSpec["spec"]["template"]["spec"]["volumes"][0] = {
+			"hostPath": {
+				"path": "/var/lib/isb-cgc-pipelines/config"
+			}
+		}
+
+		pipelineCancellerRcSpec["spec"]["nodeName"] = node
 
 		createResource(rcUrl, API_HEADERS, pipelineCancellerRcSpec)
 
-		# TODO: port forward the rabbitmq service to a local port
-		#
+		# TODO: get the rabbitmq pod name
+		rabbitmqPod = ""
+
+		try:
+			subprocess.check_call(["kubectl", "port-forward", rabbitmqPod, "5672:5672"])
+
+		except subprocess.CalledProcessError as e:
+			print "ERROR: couldn't port-forward the rabbitmq port: {reason}".format(reason=e)
+			exit(-1)
 
 		# set up the watch
 		PipelineExchange('WATCH_EXCHANGE')
@@ -464,9 +541,9 @@ class PipelineService:
 		}
 
 		try:
-			DataDisk.create(config, disk_name="pipelines-service-config", disk_size=10, disk_type="PERSISTENT_SSD", zone=zone)
+			PipelineService.sendRequest()
 
-		except DataDiskError as e:
+		except PipelineServiceError as e:
 			print "ERROR: Couldn't create the service volume (config): {reason}".format(reason=e)
 			exit(-1)
 
@@ -478,9 +555,9 @@ class PipelineService:
 		}
 
 		try:
-			DataDisk.create(config, disk_name="pipelines-service-db", disk_size=100, disk_type="PERSISTENT_SSD", zone=zone)
+			PipelineService.sendRequest()
 
-		except DataDiskError as e:
+		except PipelineServiceError as e:
 			print "ERROR: Couldn't create the service volume (database): {reason}".format(reason=e)
 			exit(-1)
 
@@ -492,7 +569,7 @@ class PipelineService:
 		}
 
 		try:
-			DataDisk.create(config, disk_name="pipelines-service-msgs", disk_size=10, disk_type="PERSISTENT_SSD", zone=zone)
+			PipelineService.sendRequest()
 
 		except DataDiskError as e:
 			print "ERROR: Couldn't create the service volume (msgs): {reason}".format(reason=e)

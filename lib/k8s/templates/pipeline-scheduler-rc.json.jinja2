@@ -1,0 +1,41 @@
+{
+    "apiVersion": "v1",
+    "kind": "ReplicationController",
+    "metadata": {
+        "name": "pipeline-scheduler"
+    },
+    "spec": {
+        "replicas": {{ replicas }},
+        "selector": {
+            "role": "pipeline-scheduler"
+        },
+        "template": {
+            "metadata": {
+                "labels": {
+                    "role": "pipeline-scheduler"
+                }
+            },
+            "spec": {
+                "containers": [
+                    {
+                        "name": "pipeline-scheduler",
+                        "image": "b.gcr.io/isb-cgc-public-docker-images/isb-cgc-pipelines:latest",
+                        "command": ["pipelineJobScheduler", "--config", "\"${PIPELINE_CONFIG}\""],
+                        "volumeMounts": [
+                            {
+                                "name": "config",
+                                "mountPath": "/etc/isb-cgc-pipelines/config",
+                                "readOnly": "true"
+                            }
+                        ]
+                    }
+                ],
+                "volumes": [
+                    {
+                        "name": "config"
+                    }
+                ]
+            }
+        }
+    }
+}

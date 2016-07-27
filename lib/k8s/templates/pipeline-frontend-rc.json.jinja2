@@ -26,7 +26,19 @@
                                 "name": "pipeline-frontend",
                                 "containerPort": 80
                             }
-                        ]
+                        ],
+                          "volumeMounts": [
+                              {
+                                  "name": "config",
+                                  "mountPath": "/etc/isb-cgc-pipelines/config",
+                                  "readOnly": "true"
+                              }
+                          ]
+                    }
+                ],
+                "volumes": [
+                    {
+                        "name": "config"
                     }
                 ]
             }
