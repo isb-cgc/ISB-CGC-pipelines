@@ -745,7 +745,7 @@ class PipelineSchedulerUtils(object):
 
 		if args.createTimeAfter:
 			where["create_time"] = {
-				"value": args.createTimeAfter,
+				"value": str(args.createTimeAfter),
 				"operator": ">="
 			}
 
