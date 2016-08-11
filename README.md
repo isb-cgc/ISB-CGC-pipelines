@@ -239,7 +239,9 @@ An instance of PipelinesConfig is required in order to create instances of Pipel
 
 The simplest way to create a functional instance of the class is as follows:
 
+```
 config = PipelinesConfig()
+```
 
 ## [The PipelineSchema Class](#pipeline-schema-class)
 
@@ -247,91 +249,157 @@ The PipelineSchema class is used to create an instance of a single pipeline task
 
 To create an instance of the class, create an instance of PipelinesConfig and pass it to the constructor of PipelineSchema, along with a few additional parameters:
 
+```
 config = PipelinesConfig()
 stepName = "stepA"
 logsPath = "gs://my-pipeline-logs/"
 imageName = "gcr.io/my-project-id/my-docker-image"
 stepA = PipelineSchema(pipelineName, logsPath, imageName, config)
+```
 
-Once you've created a PipelineSchema instance, the following methods can be used to specify various parts of the API request sent to that service.  Some methods are required to be run (as noted below), but they can be run in any order.
+The constructor for PipelineSchema has the following signature:
 
-### getSchema()
+```
+PipelineSchema(name, config, logsPath, imageName, scriptUrl=None, cmd=None, cores=1, mem=1, diskSize=None,
+	             diskType=None, env=None, inputs=None, outputs=None, tag=None, children=None, metadata=None,
+	             preemptible=False)
+```
+	             
+You can specify all of the components of a particular pipeline step in one line using the keyword arguments above or, alternatively, you can use the methods below to add things individually, which may make your code more readable and easier to maintain.
+
+### Methods
+Once you've created a PipelineSchema instance, the following methods can be used to specify various parts of the API request sent to that service.  Some methods are required to be run in order for the request to succeed (as noted below), but they can be run in any order.
+
+#### getSchema()
   
 Parameters:
   - None
 
 Description:
-  - Returns the JSON formatted pipeline request; not required
+  - Returns the JSON formatted pipeline request; *not required*
 
-### addChild(childStepName)
+#### addChild(childStepName)
 
 Parameters:  
   - **childStepName**: string; the name of the child job to add
 
 Description:
-  - Adds a child by name; not required
+  - Adds a child by name; *not required*
 
-### addInput(name, disk, localPath, gcsPath)
-
-Parameters:
-  - **name**: string; a descriptive name for the input, e.g. "bam-input"
-  - **disk**: string; the name of the disk used to store inputs
-  - **localPath**: string; the relative path on the disk to store the file
-  - **gcsPath**: string; the fully-qualified GCS path to the input file to download to the disk
-
-Description:
-  - Adds a named input parameter to the job; not required
-
-### addOutput(name, disk, localPath, gcsPath)
+#### addInput(name, disk, localPath, gcsPath)
 
 Parameters:
-  - **name**: string; a descriptive name for the output, e.g. "bai-output"
-  - **disk**: string; the name of the disk where the outputs will be located when the processing has finished
-  - **localPath**: string; the relative path on the disk to the output file(s) to upload (accepts wildcards)
-  - **gcsPath**: string; the fully-qualified GCS path to the destination directory or filename for the output 
+  - **name**:  string; a descriptive name for the input, e.g. "bam-input"
+  - **disk**:  string; the name of the disk used to store inputs
+  - **localPath**:  string; the relative path on the disk to store the file
+  - **gcsPath**:  string; the fully-qualified GCS path to the input file to download to the disk
 
 Description:
-  - Adds a named output parameter to the job; not required
+  - Adds a named input parameter to the job; *not required*
 
-- addDisk(name, diskType, sizeGb, mountPath, autoDelete=True, readOnly=False)
+#### addOutput(name, disk, localPath, gcsPath)
 
+Parameters:
+  - **name**:  string; a descriptive name for the output, e.g. "bai-output"
+  - **disk**:  string; the name of the disk where the outputs will be located when the processing has finished
+  - **localPath**:  string; the relative path on the disk to the output file(s) to upload (accepts wildcards)
+  - **gcsPath**:  string; the fully-qualified GCS path to the destination directory or filename for the output 
 
+Description:
+  - Adds a named output parameter to the job; *not required*
 
-- setLogOutptu(gcsPath)
+#### addDisk(name, diskType, sizeGb, mountPath, autoDelete=True, readOnly=False)
 
+Parameters:
+  - **name**:  string; a descriptive name for the disk, e.g. "samtools"
+  - **diskType**:  string; one of "PERSISTENT_HDD" or "PERSISTEND_SSD"
+  - **sizeGb**:  integer; the size of the disk in gigabytes
+  - **mountPath**:  string; the container mount path of the disk
+  - **autoDelete**:  boolean; whether or not to delete the disk when the job finishes; default = True
+  - **readOnly**:  boolean; whether or not to mount the disk in read-only mode; default = False
 
+Description:
+  - Adds a persistent disk to the job; *required*
 
-- setMem(memGb)
+#### setMem(memGb)
 
+Parameters:
+  - **memGb**:  integer; the amount of RAM in gigabytes
 
+Description:
+  - sets the amount of RAM in gigabytes -- if unset, a default of 2GB will be used; *not required*
 
-- setCpu(cores)
+#### setCpu(cores)
 
+Parameters:
+  - **cores**:  integer; the number of cores to request
 
+Description:
+  - sets the number of cores for a job -- if unset, a default of 1 core will be used; *not required*
 
-- setBootDiskSize(sizeGb)
+#### setPreemptible()
 
+Parameters:
+  - None
 
+Description:
+  - sets "preemptible" to True -- if unset, the job will use a standard non-preemptible VM by default; *not required*
 
-- setPreemptible()
+#### setCmd(cmdString)
 
+Parameters:
+  - **cmdString**:  string; a single line command to run within the job's Docker container
 
-
-- setImage(imageName)
-
-
-
-- setCmd(cmdString)
-
-
+Description:
+  - sets the job's container command; *not required, but strongly recommended*
 
 
 ## [The PipelineBuilder Class](#pipeline-builder-class)
 
+Instances of the PipelineBuilder class are used to collect all of the pipeline steps together into a single entity.  Creating an instance of this class is similar to creating instances of PipelineSchema:
+
+```
+config = PipelinesConfig()
+pipeline = PipelineBuilder(config)
+```
+
+Combining steps into a single pipeline is as simple as running the following method for all of the steps that you've created:
+
+```
+pipeline.addStep(stepName)
+```
+
+**Note that all pipeline steps must have unique names in order for the pipeline to be properly validated!**
+
+### Methods
+
+#### addStep(step)
+
+Parameters:
+  - **step**:  PipelineSchema; an instance of PipelineSchema to add as a step
+
+Description:
+  - adds a step to the pipeline; *at least one step is required*
+
+#### hasStep(stepName)
+
+Parameters:
+  - **stepName**: string; the name of the step that you're checking for the existence of
+
+Description:
+  - returns True if the pipeline contains a step with the given name; *not required*
+
+#### run()
+
+Parameters:
+  - None
+
+Description:
+  - starts the pipeline; *required*
 
 ## [DAG Workflow Example](#dag-workflow-example)
 
-Below is a short code snippet demonstrating how to use the underlying API directly to build a simple two-step pipeline:
+Below is a short code skeleton demonstrating at a high level how to use the underlying API directly to build a simple two-step pipeline:
 
 ```
 from utils import PipelinesConfig, PipelineSchema, PipelineBuilder
@@ -374,6 +442,8 @@ pipeline.addStep(stepB)
 # run the pipeline
 pipeline.run()
 ```
+
+A real world example can be found [here](https://raw.githubusercontent.com/isb-cgc/ISB-CGC-pipelines/master/lib/examples/api/incoming-data.py).
 
 ## [Future Plans](#future-plans)
 
