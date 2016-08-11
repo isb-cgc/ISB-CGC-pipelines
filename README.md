@@ -408,29 +408,30 @@ from utils import PipelinesConfig, PipelineSchema, PipelineBuilder
 config = PipelinesConfig()
 pipeline = PipelineBuilder(config)
 
+# additional info
+logOutput = "gs://my-log-output"
+stepAimg = "gcr.io/my-project-id/stepA"
+stepBimg = "gcr.io/my-project-id/stepB"
+
 # create the first step
-stepA = PipelineSchema(‘stepA’,  ‘stepA-tag’, config)
+stepA = PipelineSchema(‘stepA’,  config, logsPath, stepAimg, tag=‘stepA-tag’)
 
 stepA.addDisk(...)
 stepA.addInput(...)
 stepA.addOutput(...)
-stepA.setLogOutput(...)
 stepA.setMem(...)
 stepA.setCpu(...)
-stepA.setImage(...)
 stepA.setCmd(...)
 stepA.setPreemptible()
 
 # create the second step
-stepB = PipelineSchema(‘stepB’,  ‘stepB-tag’, config)
+stepB = PipelineSchema(‘stepB’,  config, logsPath, stepBimg, tag=‘stepB-tag’)
 
 stepB.addDisk(...)
 stepB.addInput(...)
 stepB.addOutput(...)
-stepB.setLogOutput(...)
 stepB.setMem(...)
 stepB.setCpu(...)
-stepB.setImage(...)
 stepB.setCmd(...)
 stepB.setPreemptible()
 
