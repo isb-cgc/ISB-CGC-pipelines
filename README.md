@@ -227,7 +227,153 @@ This section covers some more advanced use cases, such as running a DAG or seque
 
 ### [The PipelineBuilder API](#pipeline-builder-api)
 
-More info coming soon!
+There are three primary classes in the ISB-CGC-pipelines repo that can be used directly for building pipelines:
+
+- [PipelinesConfig](#pipelines-config-class) - An object containing configuration information extracted from the tool’s global configuration file, which is created and maintained via the `isb-cgc-pipelines config set` command.
+- [PipelineSchema](#pipeline-schema-class) - Used for building the schema for an individual pipeline “step” 
+- [PipelineBuilder](#pipeline-builder-class) - Used for combining instances of PipelineSchema into a single entity, as well as starting the pipeline 
+
+## [The PipelinesConfig Class](#pipelines-config-class)
+
+An instance of PipelinesConfig is required in order to create instances of PipelineSchema and PipelineBuilder (explained in the sections below).  
+
+The simplest way to create a functional instance of the class is as follows:
+
+config = PipelinesConfig()
+
+## [The PipelineSchema Class](#pipeline-schema-class)
+
+The PipelineSchema class is used to create an instance of a single pipeline task which will be run using the Google Genomics Pipelines service.  
+
+To create an instance of the class, create an instance of PipelinesConfig and pass it to the constructor of PipelineSchema, along with a few additional parameters:
+
+config = PipelinesConfig()
+stepName = "stepA"
+logsPath = "gs://my-pipeline-logs/"
+imageName = "gcr.io/my-project-id/my-docker-image"
+stepA = PipelineSchema(pipelineName, logsPath, imageName, config)
+
+Once you've created a PipelineSchema instance, the following methods can be used to specify various parts of the API request sent to that service.  Some methods are required to be run (as noted below), but they can be run in any order.
+
+### getSchema()
+  
+Parameters:
+  - None
+
+Description:
+  - Returns the JSON formatted pipeline request; not required
+
+### addChild(childStepName)
+
+Parameters:  
+  - **childStepName**: string; the name of the child job to add
+
+Description:
+  - Adds a child by name; not required
+
+### addInput(name, disk, localPath, gcsPath)
+
+Parameters:
+  - **name**: string; a descriptive name for the input, e.g. "bam-input"
+  - **disk**: string; the name of the disk used to store inputs
+  - **localPath**: string; the relative path on the disk to store the file
+  - **gcsPath**: string; the fully-qualified GCS path to the input file to download to the disk
+
+Description:
+  - Adds a named input parameter to the job; not required
+
+### addOutput(name, disk, localPath, gcsPath)
+
+Parameters:
+  - **name**: string; a descriptive name for the output, e.g. "bai-output"
+  - **disk**: string; the name of the disk where the outputs will be located when the processing has finished
+  - **localPath**: string; the relative path on the disk to the output file(s) to upload (accepts wildcards)
+  - **gcsPath**: string; the fully-qualified GCS path to the destination directory or filename for the output 
+
+Description:
+  - Adds a named output parameter to the job; not required
+
+- addDisk(name, diskType, sizeGb, mountPath, autoDelete=True, readOnly=False)
+
+
+
+- setLogOutptu(gcsPath)
+
+
+
+- setMem(memGb)
+
+
+
+- setCpu(cores)
+
+
+
+- setBootDiskSize(sizeGb)
+
+
+
+- setPreemptible()
+
+
+
+- setImage(imageName)
+
+
+
+- setCmd(cmdString)
+
+
+
+
+## [The PipelineBuilder Class](#pipeline-builder-class)
+
+
+## [DAG Workflow Example](#dag-workflow-example)
+
+Below is a short code snippet demonstrating how to use the underlying API directly to build a simple two-step pipeline:
+
+```
+from utils import PipelinesConfig, PipelineSchema, PipelineBuilder
+
+# create config, pipeline objects
+config = PipelinesConfig()
+pipeline = PipelineBuilder(config)
+
+# create the first step
+stepA = PipelineSchema(‘stepA’,  ‘stepA-tag’, config)
+
+stepA.addDisk(...)
+stepA.addInput(...)
+stepA.addOutput(...)
+stepA.setLogOutput(...)
+stepA.setMem(...)
+stepA.setCpu(...)
+stepA.setImage(...)
+stepA.setCmd(...)
+stepA.setPreemptible()
+
+# create the second step
+stepB = PipelineSchema(‘stepB’,  ‘stepB-tag’, config)
+
+stepB.addDisk(...)
+stepB.addInput(...)
+stepB.addOutput(...)
+stepB.setLogOutput(...)
+stepB.setMem(...)
+stepB.setCpu(...)
+stepB.setImage(...)
+stepB.setCmd(...)
+stepB.setPreemptible()
+
+# chain the steps together
+stepA.addChild(stepB)
+pipeline.addStep(stepA)
+pipeline.addStep(stepB)
+
+# run the pipeline
+pipeline.run()
+```
 
 ## [Future Plans](#future-plans)
 
