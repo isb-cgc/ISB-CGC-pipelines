@@ -14,7 +14,7 @@ from oauth2client import client as oauth2client
 from pipelines.config import PipelineConfig
 from pipelines.db import DatabaseRecord
 from pipelines.queue import PipelineQueue, PipelineChannel, PipelineQueueError
-from pipelines.logger import PipelineLogger
+from pipelines.logger import PipelineJobLogger
 from pipelines.routes import *
 from pipelines.service import PipelineService, PipelineServiceError
 
@@ -60,7 +60,7 @@ class PubsubMessageHandlers(object):
 					if e.resp.status in [500, 502, 503, 504]:
 						continue
 					else:
-						PipelineLogger.writeStderr("Couldn't get operation status : {reason}".format(reason=e))
+						PipelineJobLogger.writeStderr("Couldn't get operation status : {reason}".format(reason=e))
 				else:
 					break
 
@@ -72,63 +72,106 @@ class PubsubMessageHandlers(object):
 		instance = log["jsonPayload"]["resource"]["name"]
 
 		if log["jsonPayload"]["event_subtype"] == "compute.instances.preempted":
-			query = '&'.join(["select=operation_id,job_id,pipeline_name,tag,create_time,current_status,request", "instance_name={i}".format(i=instance)])
-			uri = "{route}?{query}"
+
+			data = {
+				"select": ["operation_id, job_id, pipeline_name, tag, create_time, current_status, request"],
+				"criteria": {
+					"operation": "AND",
+					"values": [
+						{
+							"instance_name": instance
+						}
+					]
+				}
+			}
+
 			try:
-				resp = PipelineService.sendRequest(SQLITE_READER_SERVICE_HOST, SQLITE_READER_SERVICE_PORT, uri.format(route=SQLITE_READ_JOBS, query=query))
+				resp = PipelineService.sendRequest(SQLITE_READER_SERVICE_HOST, SQLITE_READER_SERVICE_PORT, "/read/jobs", data=data)
 
 			except PipelineServiceError as e:
-				PipelineLogger.writeStderr("Instance {i} preempted, but no record exists in jobs database: {msg}".format(i=instance, msg=e))
+				PipelineJobLogger.writeStderr("Instance {i} preempted, but no record exists in jobs database: {msg}".format(i=instance, msg=e))
 
 			else:
 				jobInfo = DatabaseRecord(resp["records"][0])
 				operationId = jobInfo.operation_id
-				PipelineLogger.writeStdout("Instance {i} (operation {o}) preempted!".format(i=instance, o=operationId))
+				PipelineJobLogger.writeStdout("Instance {i} (operation {o}) preempted!".format(i=instance, o=operationId))
 
-				query = '&'.join([])  # TODO: fill in
+				data = {
+					"select": [
+						"child_id"
+					],
+					"criteria": {
+						"operation": "AND",
+						"values": [
+							{
+								"parent_id": jobInfo.job_id
+							}
+						]
+					}
+				}
+
 				try:
-					resp = PipelineService.sendRequest(SQLITE_READER_SERVICE_HOST, SQLITE_READER_SERVICE_PORT, uri.format(route=SQLITE_READ_JOB_DEPS, query=query))
-					children = json.loads(resp)[""]  # TODO: specify
-					#children = [x[0] for x in pipelineDatabase.getChildJobs(jobInfo.job_id)]
+					resp = PipelineService.sendRequest(SQLITE_READER_SERVICE_HOST, SQLITE_READER_SERVICE_PORT, "/read/job_dependencies", data=data)
+				except PipelineServiceError as e:
+					PipelineJobLogger.writeStderr("Couldn't get job dependency info: {reason}".format(reason=e))
 
-				if jobInfo.current_status != "CANCELLED":
-					query = '&'.join([]) # TODO: fill in
-					resp = PipelineService.sendRequest(SQLITE_WRITER_SERVICE_HOST, SQLITE_WRITER_SERVICE_PORT, uri.format(route=SQLITE_UPDATE_JOBS, query=query))
-					#pipelineDatabase.updateJob(jobInfo.job_id, keyName="job_id", setValues={"current_status": "PREEMPTED", "preemptions": 1})
+				else:
+					results = json.loads(resp)["results"]
+					children = [x["child_id"] for x in results]
 
-					if CONFIG.autorestart_preempted:
-						msg = {
-							"job_id": jobInfo.job_id,
-							"request": json.loads(jobInfo.request)
+					if jobInfo.current_status != "CANCELLED":
+						data = {
+							"updates": {
+								"current_status": "PREEMPTED",
+								"preemptions": {
+									"incr": 1
+								}
+							},
+							"criteria": {
+								"job_id": jobInfo.job_id
+							}
 						}
-						pipelineQueue.publish(json.dumps(msg))
+
+						try:
+							resp = PipelineService.sendRequest(SQLITE_WRITER_SERVICE_HOST, SQLITE_WRITER_SERVICE_PORT, "/update/jobs", data=data)
+
+						except PipelineServiceError as e:
+							PipelineJobLogger.writeStderr("Couldn't update job record: {reason}".format(reason=e))
+
+						else:
+							if CONFIG.autorestart_preempted:
+								msg = {
+									"job_id": jobInfo.job_id,
+									"request": json.loads(jobInfo.request)
+								}
+								pipelineQueue.publish(json.dumps(msg))
+							else:
+								if len(children) > 0:
+									PipelineJobLogger.writeStderr(
+										"Couldn't start downstream jobs for job {j} ({pipeline}-{tag}) : status is PREEMPTED (autorestart is FALSE)".format(
+											j=jobInfo.job_id, pipeline=jobInfo.pipeline_name, tag=jobInfo.tag))
+
+								try:
+									msg = {
+										"current_status": "PREEMPTED"
+									}
+									pipelineChannel.publishToExchange('WATCH_EXCHANGE', "PIPELINE_JOB_{j}".format(j=jobInfo.job_id), msg)
+								except PipelineQueueError as e:
+									pass
+
 					else:
 						if len(children) > 0:
-							PipelineLogger.writeStderr(
-								"Couldn't start downstream jobs for job {j} ({pipeline}-{tag}) : status is PREEMPTED (autorestart is FALSE)".format(
+							PipelineJobLogger.writeStderr(
+								"Couldn't start downstream jobs for job {j} ({pipeline}-{tag}) : status is CANCELLED".format(
 									j=jobInfo.job_id, pipeline=jobInfo.pipeline_name, tag=jobInfo.tag))
 
 						try:
 							msg = {
-								"current_status": "PREEMPTED"
+								"current_status": "CANCELLED"
 							}
 							pipelineChannel.publishToExchange('WATCH_EXCHANGE', "PIPELINE_JOB_{j}".format(j=jobInfo.job_id), msg)
 						except PipelineQueueError as e:
 							pass
-
-				else:
-					if len(children) > 0:
-						PipelineLogger.writeStderr(
-							"Couldn't start downstream jobs for job {j} ({pipeline}-{tag}) : status is CANCELLED".format(
-								j=jobInfo.job_id, pipeline=jobInfo.pipeline_name, tag=jobInfo.tag))
-
-					try:
-						msg = {
-							"current_status": "CANCELLED"
-						}
-						pipelineChannel.publishToExchange('WATCH_EXCHANGE', "PIPELINE_JOB_{j}".format(j=jobInfo.job_id), msg)
-					except PipelineQueueError as e:
-						pass
 
 		elif log["jsonPayload"]["event_subtype"] == "compute.instances.delete":
 			# update the status of the job in the jobs db
@@ -136,7 +179,7 @@ class PubsubMessageHandlers(object):
 				jobInfo = pipelineDatabase.getJobInfo(select=["job_id", "pipeline_name", "tag", "create_time", "operation_id", "current_status"], where={"instance_name": instance})[0]
 
 			except IndexError:
-				PipelineLogger.writeStderr("Instance {i} deleted, but no record exists in jobs database".format(i=instance))
+				PipelineJobLogger.writeStderr("Instance {i} deleted, but no record exists in jobs database".format(i=instance))
 
 			else:
 				operationId = jobInfo.operation_id
@@ -152,12 +195,12 @@ class PubsubMessageHandlers(object):
 						if status is not None:
 							processingTime = getProcessingTime(status)
 
-							PipelineLogger.writeStdout("Instance {i} (operation {o}) completed!".format(i=instance, o=operationId))
+							PipelineJobLogger.writeStdout("Instance {i} (operation {o}) completed!".format(i=instance, o=operationId))
 
 							children = [x[0] for x in pipelineDatabase.getChildJobs(jobInfo.job_id)]
 
 							if status["done"] and "error" not in status.keys():
-								PipelineLogger.writeStdout("PIPELINE SUCCEEDED (pipeline: {pipeline}, tag: {tag}, operation: {operation})".format(pipeline=jobInfo.pipeline_name, tag=jobInfo.tag, operation=status["name"]))
+								PipelineJobLogger.writeStdout("PIPELINE SUCCEEDED (pipeline: {pipeline}, tag: {tag}, operation: {operation})".format(pipeline=jobInfo.pipeline_name, tag=jobInfo.tag, operation=status["name"]))
 								pipelineDatabase.updateJob(jobInfo.job_id, keyName="job_id", setValues={"current_status": "SUCCEEDED", "end_time": status["metadata"]["endTime"], "processing_time": processingTime})
 
 								if len(children) > 0:
@@ -186,7 +229,7 @@ class PubsubMessageHandlers(object):
 											pipelineQueue.publish(json.dumps(msg))
 
 								else:
-									PipelineLogger.writeStdout(
+									PipelineJobLogger.writeStdout(
 										"Job {jobid} has no child jobs to check!".format(jobid=jobInfo.job_id))
 
 									# get the disks associated with the job
@@ -203,10 +246,10 @@ class PubsubMessageHandlers(object):
 
 							elif "error" in status.keys():
 								if jobInfo.current_status != "CANCELLED":
-									PipelineLogger.writeStdout("PIPELINE FAILED ({job}): {reason}".format(job="{pipeline}-{tag}".format(pipeline=jobInfo.pipeline_name, tag=jobInfo.tag), reason=status["error"]["message"]))
+									PipelineJobLogger.writeStdout("PIPELINE FAILED ({job}): {reason}".format(job="{pipeline}-{tag}".format(pipeline=jobInfo.pipeline_name, tag=jobInfo.tag), reason=status["error"]["message"]))
 									pipelineDatabase.updateJob(jobInfo.job_id, keyName="job_id", setValues={"current_status": "FAILED", "end_time": status["metadata"]["endTime"], "processing_time": processingTime})
 									if len(children) > 0:
-										PipelineLogger.writeStderr("Couldn't start downstream jobs for job {j} ({pipeline}-{tag}) : status is FAILED".format(
+										PipelineJobLogger.writeStderr("Couldn't start downstream jobs for job {j} ({pipeline}-{tag}) : status is FAILED".format(
 												j=jobInfo.job_id, pipeline=jobInfo.pipeline_name, tag=jobInfo.tag))
 
 									try:
@@ -227,7 +270,7 @@ class PubsubMessageHandlers(object):
 				instanceInfo = compute.instances().get(project=CONFIG.project_id, zone=zone, instance=instance).execute()
 
 			except HttpError as e:
-				PipelineLogger.writeStderr("Couldn't get info for instance {i} : {reason}".format(i=instance, reason=e))
+				PipelineJobLogger.writeStderr("Couldn't get info for instance {i} : {reason}".format(i=instance, reason=e))
 
 			else:
 				operationId = instanceInfo["description"].partition("Operation: ")[-1]
@@ -236,7 +279,7 @@ class PubsubMessageHandlers(object):
 				except PipelineDatabaseError as e:
 					pass # TODO: handle
 
-				PipelineLogger.writeStdout("Instance {i} (operation {o}) started!".format(i=instance, o=operationId))
+				PipelineJobLogger.writeStdout("Instance {i} (operation {o}) started!".format(i=instance, o=operationId))
 				pipelineDatabase.updateJob(operationId, keyName="operation_id", setValues={"instance_name": instance})
 
 				try:
@@ -244,7 +287,7 @@ class PubsubMessageHandlers(object):
 					                                      where={"instance_name": instance})[0]
 
 				except IndexError:
-					PipelineLogger.writeStderr(
+					PipelineJobLogger.writeStderr(
 						"Instance {i} deleted, but no record exists in jobs database".format(i=instance))
 
 				else:
@@ -289,7 +332,7 @@ def main(args, CONFIG):
 				if e.resp.status == 504:
 					continue
 				else:
-					PipelineLogger.writeStderr("Couldn't pull from subscription {s} : {reason}".format(s=args.subscription, reason=e))
+					PipelineJobLogger.writeStderr("Couldn't pull from subscription {s} : {reason}".format(s=args.subscription, reason=e))
 		else:
 			receivedMessages = resp.get('receivedMessages')
 			if receivedMessages is not None:
@@ -298,7 +341,7 @@ def main(args, CONFIG):
 					pubsubMessage = receivedMessage.get('message')
 					if pubsubMessage:
 						log = json.loads(base64.b64decode(str(pubsubMessage.get('data'))))
-						PipelineLogger.writeStdout("Received message: {msg}".format(msg=base64.b64decode(str(pubsubMessage.get('data')))))
+						PipelineJobLogger.writeStdout("Received message: {msg}".format(msg=base64.b64decode(str(pubsubMessage.get('data')))))
 						PubsubMessageHandlers.pipelineVmLogs(log, compute, genomics, CONFIG)
 						ackIds.append(receivedMessage.get('ackId'))
 

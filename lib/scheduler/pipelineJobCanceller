@@ -11,7 +11,7 @@ from oauth2client.client import GoogleCredentials
 from pipelines.config import PipelineConfig
 from pipelines.db import PipelineDatabase
 from pipelines.queue import PipelineQueue
-from pipelines.logger import PipelineLogger
+from pipelines.logger import PipelineJobLogger
 
 
 # NOTE: this process should be started up as part of the scheduling system (managed by Supervisor)
@@ -42,7 +42,7 @@ def main(config):
 					genomics.operations().cancel(name="operations/{o}".format(o=jobInfo.operation_id), body={}).execute()
 				except HttpError as e:
 					jobInfo = pipelineDatabase.getJobInfo(select=["pipeline_name", "tag"], where={"job_id": body["job_id"]})
-					PipelineLogger.writeStderr(
+					PipelineJobLogger.writeStderr(
 						"ERROR: couldn't cancel job {pipeline}-{tag} : {reason}".format(
 							pipeline=jobInfo[0].pipeline_name, tag=jobInfo[0].tag, reason=e))
 				else:

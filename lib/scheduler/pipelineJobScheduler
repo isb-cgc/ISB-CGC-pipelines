@@ -10,6 +10,7 @@ from oauth2client.client import GoogleCredentials
 from pipelines.config import PipelineConfig
 from pipelines.db import PipelineDatabase
 from pipelines.queue import PipelineQueue
+from pipelines.logger import PipelineJobLogger
 
 # NOTE: this process should be started up as part of the scheduling system (managed by Supervisor)
 
@@ -85,13 +86,13 @@ def main(config):
 					run = genomics.pipelines().run(body=body["request"]).execute()
 				except HttpError as e:
 					jobInfo = pipelineDatabase.getJobInfo(select=["pipeline_name", "tag"], where={"job_id": body["job_id"]})
-					PipelineLogger.writeStderr(
+					PipelineJobLogger.writeStderr(
 						"ERROR: couldn't start job {pipeline}-{tag} : {reason}".format(pipeline=jobInfo[0].pipeline_name, tag=jobInfo[0].tag, reason=e))
 					pipelineDatabase.updateJob(body["job_id"], keyName="job_id", setValues={"current_status": "ERROR"})
 
 				else:
 					operationId = run["name"].split("/")[-1]
-					PipelineLogger.writeStdout("Operation submitted: {op}".format(op=operationId))
+					PipelineJobLogger.writeStdout("Operation submitted: {op}".format(op=operationId))
 					pipelineDatabase.updateJob(body["job_id"], keyName="job_id", setValues={"current_status": "RUNNING", "operation_id": operationId, "stdout_log": "{op}-stdout.log".format(op=operationId), "stderr_log": "{op}-stderr.log".format(op=operationId), "create_time": run["metadata"]["createTime"], "end_time": None, "processing_time": None})
 
 			pipelineQueue.acknowledge(method)

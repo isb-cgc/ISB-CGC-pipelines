@@ -33,14 +33,25 @@ class PipelineDatabase(object):
 		if "operation" in c.keys() and "values" in c.keys():
 			if c["operation"] in ["AND", "OR", "NOT"]:
 				opString = " {op} ".format(op=c["operation"])
-				s, v = zip(*self._parseCriteria(c["values"]))
-				return opString.join(s), v
+				assignments = []
+				substitutions = []
+				for value in c["values"]:
+					s, v = zip(*self._parseCriteria(value))
+					assignments.append(s)
+					if v is not None:
+						substitutions.append(v)
+
+				return opString.join(assignments), substitutions
 
 			else:
 				raise PipelineDatabaseError("{op} not a valid operation!".format(op=c["operation"]))
 
 		elif "key" in c.keys() and "value" in c.keys():
-			return [("{k} = ?".format(k=k), v) for k, v in c.iteritems()]
+			if type(c["value"]) is dict and "incr" in c["value"].keys():
+				return "{key} = {key} + {value}".format(key=c["key"], value=c["value"]["incr"]), None
+
+			else:
+				return "{key} = ?".format(key=c["key"]), c["value"]
 
 		else:
 			raise PipelineDatabaseError("Invalid parameters: {params}".format(params=','.join(c.keys())))
@@ -55,7 +66,18 @@ class PipelineDatabase(object):
 		query = "SELECT {data} from {table} WHERE {where}".format(data=dataString, table=table, where=where)
 		records = self._pipelinesDb.execute(query, tuple(subs)).fetchall()
 
-		return dict(zip(data, records))
+		results = {
+			"results": []
+		}
+
+		for r in records:
+			o = {}
+			for i, d in enumerate(data):
+				o[d] = r[i]
+
+			results["results"].append(o)
+
+		return results
 
 	def insert(self, table, **record):
 		cols, vals = zip(*record.items())
