@@ -747,6 +747,9 @@ class PipelineService:
 		pipelineFrontendRcSpec["spec"]["template"]["spec"]["volumes"] = prepareTemplate(volume, pdName=configReq["disk_name"], volName=configReq["disk_name"], ro=True)
 		createResource(rcUrl, API_HEADERS, pipelineFrontendRcSpec)
 
+		# write the configuration information to the config disk
+
+
 		print "Service bootstrap successful!"
 
 

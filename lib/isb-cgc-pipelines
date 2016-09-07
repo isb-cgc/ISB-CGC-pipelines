@@ -6,7 +6,6 @@ import subprocess
 from pipelines.routes import *
 from pipelines.paths import *
 from pipelines.service import PipelineService, PipelineServiceError
-from pipelines.config import PipelineConfig, PipelineConfigError
 
 
 if __name__ == "__main__":
