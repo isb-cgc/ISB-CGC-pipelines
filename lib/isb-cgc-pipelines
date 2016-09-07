@@ -30,9 +30,25 @@ if __name__ == "__main__":
 	args, unknown = parser.parse_known_args()
 
 	if args.subcommand == "bootstrap":
+		parser = argparse.ArgumentParser()
+		parser.add_argument("--project-id", required=True)
+		parser.add_argument("--zones", default="", required=False)
+		parser.add_argument("--scopes", default="", required=False)
+		parser.add_argument("--service-account-email", default='default', required=False)
+		parser.add_argument("--max-running-jobs", default=2000, required=False)
+		parser.add_argument("--autorestart-preempted", action='store_true', default=False, required=False)
+		parser.add_argument("--cluster-zone", default='us-central1-a', required=False)
+		parser.add_argument("--cluster-name", default='isb-cgc-pipelines', required=False)
+		parser.add_argument("--cluster-machine-type", default='n1-standard-8', required=False)
+		parser.add_argument("--cluster-nodes", default=2, required=False)
+		parser.add_argument("--cluster-node-disk-size", default=100, required=False)
+		parser.add_argument("--cluster-node-disk-type", default='PERSISTENT_SSD', required=False)
+
+		args = parser.parse_args(args=unknown)
+
 		try:
-			PipelineService.bootstrapServiceCluster()
-			PipelineService.bootstrapMessageHandlers()
+			PipelineService.bootstrapServiceCluster(**vars(args))
+			PipelineService.bootstrapMessageHandlers(project_id=args.project_id)
 
 		except PipelineServiceError as e:
 			print "ERROR: couldn't bootstrap service cluster: {reason}".format(reason=e)

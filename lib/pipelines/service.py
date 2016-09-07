@@ -164,14 +164,7 @@ class PipelineService:
 
 
 	@staticmethod
-	def bootstrapServiceCluster():
-		try:
-			c = PipelineConfig()
-
-		except PipelineConfigError as e:
-			print "ERROR: couldn't obtain configuration: {reason}".format(reason=e)
-			exit(-1)
-
+	def bootstrapServiceCluster(project_id=None, zones=None, scopes=None, service_account_email=None, max_running_jobs=None, autorestart_preempted=None, cluster_name=None, cluster_zone=None, cluster_nodes=None, cluster_node_disk_type=None, cluster_node_disk_size=None):
 		credentials = GoogleCredentials.get_application_default()
 		http = credentials.authorize(httplib2.Http())
 
@@ -179,14 +172,6 @@ class PipelineService:
 			credentials.refresh(http)
 
 		gke = discovery.build('container', 'v1', http=http)
-
-		projectId = c.project_id
-		zone = c.cluster_zone
-		clusterName = c.cluster_name
-		machineType = c.cluster_machine_type
-		nodes = int(c.cluster_nodes)
-		nodeDiskSize = int(c.cluster_node_disk_size)
-		nodeDiskType = int(c.cluster_node_disk_type)
 
 		def refreshAccessToken():
 			if credentials.access_token_expired:
@@ -219,7 +204,7 @@ class PipelineService:
 			clusterExists = False
 
 			try:
-				response = gke.projects().zones().clusters().get(projectId=projectId, zone=zone, clusterId=clusterName).execute()
+				response = gke.projects().zones().clusters().get(projectId=project_id, zone=cluster_zone, clusterId=cluster_name).execute()
 
 			except HttpError:
 				pass
@@ -227,7 +212,7 @@ class PipelineService:
 			else:
 				# make sure the existing cluster meets the requirements in the given specification
 				try:
-					if str(response["name"]) == str(clusterName) and \
+					if str(response["name"]) == str(cluster_name) and \
 							str(response["initialNodeCount"]) == str(nodes) and \
 							str(response["nodeConfig"]["diskSizeGb"]) == str(nodeDiskSize) and \
 							str(response["nodeConfig"]["machineType"]) == str(machineType):
@@ -242,7 +227,7 @@ class PipelineService:
 		def ensureCluster():
 			# create a cluster to run the workflow on if it doesn't exist already
 			if not clusterExists():
-				print "Creating cluster {cluster} ...".format(cluster=clusterName)
+				print "Creating cluster {cluster} ...".format(cluster=cluster_name)
 				createCluster = gke.projects().zones().clusters().create(projectId=projectId, zone=zone, body=clusterSpec).execute()
 
 				# wait for the operation to complete
@@ -256,7 +241,7 @@ class PipelineService:
 
 		def configureClusterAccess():
 			# configure cluster access (may want to perform checks before doing this)
-			print "Configuring access to cluster {cluster} ...".format(cluster=clusterName)
+			print "Configuring access to cluster {cluster} ...".format(cluster=cluster_name)
 
 			# configure ssh keys
 			try:
@@ -275,20 +260,20 @@ class PipelineService:
 				exit(-1)
 
 			try:
-				subprocess.check_call(["kubectl", "config", "set", "cluster", clusterName])
+				subprocess.check_call(["kubectl", "config", "set", "cluster", cluster_name])
 			except subprocess.CalledProcessError as e:
 				print "ERROR: Couldn't set cluster in configuration: {reason}".format(reason=e)
 				exit(-1)  # raise an exception
 
 			try:
-				subprocess.check_call(["gcloud", "container", "clusters", "get-credentials", clusterName])
+				subprocess.check_call(["gcloud", "container", "clusters", "get-credentials", cluster_name])
 			except subprocess.CalledProcessError as e:
 				print "ERROR: Couldn't get cluster credentials: {reason}".format(reason=e)
 				exit(-1)  # raise an exception
 
 			# get the cluster hosts for reference
 			try:
-				instanceGroupName = subprocess.check_output(["gcloud", "compute", "instance-groups", "list", "--regexp", "^gke-{cluster}-.*-group$".format(cluster=clusterName)]).split('\n')[1].split(' ')[0]
+				instanceGroupName = subprocess.check_output(["gcloud", "compute", "instance-groups", "list", "--regexp", "^gke-{cluster}-.*-group$".format(cluster=cluster_name)]).split('\n')[1].split(' ')[0]
 				instanceList = subprocess.check_output(["gcloud", "compute", "instance-groups", "list-instances", instanceGroupName]).split('\n')[1:-1]
 
 			except subprocess.CalledProcessError as e:
@@ -340,17 +325,17 @@ class PipelineService:
 		API_HEADERS.update({"Authorization": "Bearer {token}".format(token=credentials.access_token)})
 
 		# dummy config
-		config = PipelineConfig(project_id=projectId)
+		config = PipelineConfig(project_id=project_id)
 
 		# load/render/submit the request templates
 
 		# cluster template
 		with open(os.path.join(TEMPLATES_PATH, "cluster.json.jinja2")) as f:
-			clusterSpec = prepareTemplate(f, projectId=projectId, zone=zone, clusterName=clusterName, nodes=nodes, nodeDiskSize=nodeDiskSize, nodeDiskType=nodeDiskType)
+			clusterSpec = prepareTemplate(f, projectId=project_id, zone=cluster_zone, cluster_name=cluster_name, nodes=cluster_nodes, nodeDiskSize=cluster_node_disk_size, nodeDiskType=cluster_node_disk_type)
 
 		# namespace template
 		with open(os.path.join(TEMPLATES_PATH, "namespaces.json.jinja2")) as f:
-			namespaceSpec = prepareTemplate(f, name=clusterName)
+			namespaceSpec = prepareTemplate(f, name=cluster_name)
 
 		# create and configure cluster
 		ensureCluster()
@@ -539,7 +524,7 @@ class PipelineService:
 
 		createResource(rcUrl, API_HEADERS, pipelineCancellerRcSpec)
 
-		# TODO: get the rabbitmq pod name
+		# port forward the rabbitmq service to localhost
 		try:
 			output = subprocess.check_output(["kubectl", "describe", "pods", rabbitmqRcSpec["metadata"]["name"]])
 
@@ -557,6 +542,24 @@ class PipelineService:
 			print "ERROR: couldn't port-forward the rabbitmq port: {reason}".format(reason=e)
 			exit(-1)
 
+		# port forward the pipeline service to localhost
+		try:
+			output = subprocess.check_output(["kubectl", "describe", "pods", pipelineFrontendRcSpec["metadata"]["name"]])
+
+		except subprocess.CalledProcessError as e:
+			print "ERROR: coulen't get the rabbitmq pod name: {reason}".format(reason=e)
+			exit(-1)
+
+		pipelineServicePod = output.split('\n')[1].split(' ')[0]
+		print "pipeline service pod: " + pipelineServicePod
+
+		try:
+			subprocess.check_call(["kubectl", "port-forward", pipelineServicePod, "80:80"])
+
+		except subprocess.CalledProcessError as e:
+			print "ERROR: couldn't port-forward the pipeline service port: {reason}".format(reason=e)
+			exit(-1)
+
 		# set up the watch
 		PipelineExchange('WATCH_EXCHANGE')
 
@@ -567,11 +570,11 @@ class PipelineService:
 			"disk_name": "pipelines-service-config",  # TODO: make unique
 			"disk_type": "PERSISTENT_SSD",
 			"disk_size": 10,
-			"disk_zone": zone
+			"disk_zone": cluster_zone
 		}
 
 		try:
-			PipelineService.sendRequest()
+			PipelineService.sendRequest('localhost', '80', '/datadisks/create', data=configReq)
 
 		except PipelineServiceError as e:
 			print "ERROR: Couldn't create the service volume (config): {reason}".format(reason=e)
@@ -581,11 +584,11 @@ class PipelineService:
 			"disk_name": "pipelines-service-db",  # TODO: make unique
 			"disk_type": "PERSISTENT_SSD",
 			"disk_size": 10,  # TODO: add to local config or cli
-			"disk_zone": zone
+			"disk_zone": cluster_zone
 		}
 
 		try:
-			PipelineService.sendRequest()
+			PipelineService.sendRequest('localhost', '80', '/datadisks/create', data=databaseReq)
 
 		except PipelineServiceError as e:
 			print "ERROR: Couldn't create the service volume (database): {reason}".format(reason=e)
@@ -599,9 +602,9 @@ class PipelineService:
 		}
 
 		try:
-			PipelineService.sendRequest()
+			PipelineService.sendRequest('localhost', '80', '/datadisks/create', data=msgReq)
 
-		except DataDiskError as e:
+		except PipelineServiceError as e:
 			print "ERROR: Couldn't create the service volume (msgs): {reason}".format(reason=e)
 			exit(-1)
 
@@ -619,24 +622,24 @@ class PipelineService:
 		configDiskJob = PipelineSchema("bootstrap-config-disk", config,
 		                               "gs://pipelines-tmp-{uuid}".format(uuid=u),
 		                               "gcr.io/isb-cgc-public-docker-images/isb-cgc-pipelines",
-		                               cmd="cd /etc/isb-cgc-pipelines && touch config && bootstrap-config --projectId {p}".format(p=projectId),
+		                               cmd="cd /etc/isb-cgc-pipelines && touch config && bootstrap-config --projectId {p}".format(p=project_id),
 		                               cores=1,
 		                               mem=2,
-		                               zone=zone,
+		                               zone=cluster_zone,
 		                               tag=u)
 
-		configDiskJob.addExistingDisk("pipelines-service-config", "PERSISTENT_SSD", projectId, zone, "/etc/isb-cgc-pipelines", autodelete=False)
+		configDiskJob.addExistingDisk("pipelines-service-config", "PERSISTENT_SSD", project_id, cluster_zone, "/etc/isb-cgc-pipelines", autodelete=False)
 
 		databaseDiskJob = PipelineSchema("bootstrap-db-disk", config,
 		                               "gs://pipelines-tmp-{uuid}".format(uuid=u),
 		                               "gcr.io/isb-cgc-public-docker-images/isb-cgc-pipelines",
-		                               cmd="bootstrap-db".format(p=projectId),
+		                               cmd="bootstrap-db".format(p=project_id),
 		                               cores=1,
 		                               mem=2,
-		                               zone=zone,
+		                               zone=cluster_zone,
 		                               tag=u)
 
-		databaseDiskJob.addExistingDisk("pipelines-service-db", "PERSISTENT_SSD", projectId, zone, "/var/lib/isb-cgc-pipelines", autodelete=False)
+		databaseDiskJob.addExistingDisk("pipelines-service-db", "PERSISTENT_SSD", project_id, cluster_zone, "/var/lib/isb-cgc-pipelines", autodelete=False)
 
 		messagingDiskJob = PipelineSchema("bootstrap-msg-disk", config,
 		                                 "gs://pipelines-tmp-{uuid}".format(uuid=u),
@@ -647,7 +650,7 @@ class PipelineService:
 		                                 zone=zone,
 		                                 tag=u)
 
-		databaseDiskJob.addExistingDisk("pipelines-service-msgs", "PERSISTENT_SSD", projectId, zone,
+		databaseDiskJob.addExistingDisk("pipelines-service-msgs", "PERSISTENT_SSD", project_id, cluster_zone,
 		                                "/var/lib/isb-cgc-pipelines", autodelete=False)
 
 		createDisks.addStep(configDiskJob)
@@ -748,13 +751,7 @@ class PipelineService:
 
 
 	@staticmethod
-	def bootstrapMessageHandlers():
-		try:
-			c = PipelineConfig()
-
-		except PipelineConfigError as e:
-			print "ERROR: couldn't obtain configuration: {reason}".format(reason=e)
-			exit(-1)
+	def bootstrapMessageHandlers(project_id=None):
 
 		credentials = GoogleCredentials.get_application_default()
 		http = credentials.authorize(httplib2.Http())
@@ -775,7 +772,7 @@ class PipelineService:
 						'jsonPayload.event_type="GCE_OPERATION_DONE" AND '
 						'jsonPayload.event_subtype="compute.instances.insert" AND '
 						'NOT error AND logName="projects/{project}/logs/compute.googleapis.com%2Factivity_log"'
-				).format(project=c.project_id, tz=timestamp),
+				).format(project=project_id, tz=timestamp),
 				"trigger": "topic"
 			},
 			"pipelineVmPreempted": {
@@ -784,7 +781,7 @@ class PipelineService:
 						'jsonPayload.event_type="GCE_OPERATION_DONE" AND '
 						'jsonPayload.event_subtype="compute.instances.preempted" AND '
 						'NOT error AND logName="projects/{project}/logs/compute.googleapis.com%2Factivity_log"'
-				).format(project=c.project_id, tz=timestamp),
+				).format(project=project_id, tz=timestamp),
 				"trigger": "topic"
 			},
 			"pipelineVmDelete": {
@@ -793,14 +790,14 @@ class PipelineService:
 						'jsonPayload.event_type="GCE_OPERATION_DONE" AND '
 						'jsonPayload.event_subtype="compute.instances.delete" AND '
 						'NOT error AND logName="projects/{project}/logs/compute.googleapis.com%2Factivity_log"'
-				).format(project=c.project_id, tz=timestamp),
+				).format(project=project_id, tz=timestamp),
 				"trigger": "topic",
 			}
 		}
 
 		for t, v in topics.iteritems():
-			topic = "projects/{project}/topics/{t}".format(project=c.project_id, t=t)
-			subscription = 'projects/{project}/subscriptions/{subscription}'.format(project=c.project_id, subscription=t)
+			topic = "projects/{project}/topics/{t}".format(project=project_id, t=t)
+			subscription = 'projects/{project}/subscriptions/{subscription}'.format(project=project_id, subscription=t)
 			try:
 				pubsub.projects().topics().get(topic=topic).execute()
 			except HttpError:
@@ -824,18 +821,18 @@ class PipelineService:
 					exit(-1)
 
 			body = {
-				"destination": "pubsub.googleapis.com/projects/{project}/topics/{t}".format(project=c.project_id, t=t),
+				"destination": "pubsub.googleapis.com/projects/{project}/topics/{t}".format(project=project_id, t=t),
 				"filter": v["filter"],
 				"name": t,
 				"outputVersionFormat": "V2"
 			}
 
-			sink = "projects/{project}/sinks/{t}".format(project=c.project_id, t=t)
+			sink = "projects/{project}/sinks/{t}".format(project=project_id, t=t)
 			try:
 				logging.projects().sinks().get(sinkName=sink).execute()
 			except HttpError as e:
 				try:
-					logging.projects().sinks().create(projectName="projects/{project}".format(project=c.project_id), body=body).execute()
+					logging.projects().sinks().create(projectName="projects/{project}".format(project=project_id), body=body).execute()
 				except HttpError as e:
 					print "ERROR: couldn't create the {t} log sink : {reason}".format(t=t, reason=e)
 					exit(-1)
