@@ -45,6 +45,36 @@ class PipelineConfig(SafeConfigParser, object):
 				"section": "pipelines",
 				"required": True,
 				"default": False
+			},
+			"cluster_zone": {
+				"section": "k8s",
+				"required": True,
+				"default": "us-central1-a"
+			},
+			"cluster_name": {
+				"section": "k8s",
+				"required": True,
+				"default": "isb-cgc-pipelines"
+			},
+			"cluster_machine_type": {
+				"section": "k8s",
+				"required": True,
+				"default": "n1-standard-8"
+			},
+			"cluster_nodes": {
+				"section": "k8s",
+				"required": True,
+				"default": 2
+			},
+			"cluster_node_disk_size": {
+				"section": "k8s",
+				"required": True,
+				"default": 100
+			},
+			"cluster_node_disk_type": {
+				"section": "k8s",
+				"required": True,
+				"default": "PERSISTENT_SSD"
 			}
 		}
 
@@ -145,5 +175,5 @@ class PipelineConfigUpdateHandler(pyinotify.ProcessEvent):
 		self._config = config
 
 	def process_IN_CLOSE_WRITE(self, event):
-		PipelineLogger.writeStdout("Refreshing configuration ...")
+		PipelineJobLogger.writeStdout("Refreshing configuration ...")
 		self._config.refresh()

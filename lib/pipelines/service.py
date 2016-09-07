@@ -4,7 +4,7 @@ import string
 import requests
 import httplib2
 import subprocess
-import futures
+from concurrent.futures import *
 from time import sleep
 from random import SystemRandom
 from datetime import datetime
@@ -164,7 +164,29 @@ class PipelineService:
 
 
 	@staticmethod
-	def bootstrapServiceCluster(gke, credentials, http, projectId, zone, clusterName, machineType, nodes, nodeDiskSize, nodeDiskType):
+	def bootstrapServiceCluster():
+		try:
+			c = PipelineConfig()
+
+		except PipelineConfigError as e:
+			print "ERROR: couldn't obtain configuration: {reason}".format(reason=e)
+			exit(-1)
+
+		credentials = GoogleCredentials.get_application_default()
+		http = credentials.authorize(httplib2.Http())
+
+		if credentials.access_token_expired:
+			credentials.refresh(http)
+
+		gke = discovery.build('container', 'v1', http=http)
+
+		projectId = c.project_id
+		zone = c.cluster_zone
+		clusterName = c.cluster_name
+		machineType = c.cluster_machine_type
+		nodes = int(c.cluster_nodes)
+		nodeDiskSize = int(c.cluster_node_disk_size)
+		nodeDiskType = int(c.cluster_node_disk_type)
 
 		def refreshAccessToken():
 			if credentials.access_token_expired:
@@ -647,10 +669,10 @@ class PipelineService:
 		error = 0
 		errors = []
 
-		with futures.ThreadPoolExecutor(2) as p:
+		with ThreadPoolExecutor(2) as p:
 			statuses = dict((p.submit(PipelineService.watchJob, j, 'WATCH_EXCHANGE') for j in jobIds))
 
-			for s in futures.as_completed(statuses):
+			for s in as_completed(statuses):
 				if s.exception() is not None:
 					errors.append("ERROR: Couldn't create disk volume: {reason}".format(reason=s.exception()))
 					error = 1
@@ -726,7 +748,23 @@ class PipelineService:
 
 
 	@staticmethod
-	def bootstrapMessageHandlers(pubsub, logging, config):
+	def bootstrapMessageHandlers():
+		try:
+			c = PipelineConfig()
+
+		except PipelineConfigError as e:
+			print "ERROR: couldn't obtain configuration: {reason}".format(reason=e)
+			exit(-1)
+
+		credentials = GoogleCredentials.get_application_default()
+		http = credentials.authorize(httplib2.Http())
+
+		if credentials.access_token_expired:
+			credentials.refresh(http)
+
+		pubsub = discovery.build('pubsub', 'v1', http=http)
+		logging = discovery.build('logging', 'v2beta1', http=http)
+
 		# create log sinks for pipeline vm logs
 		timestamp = datetime.utcnow().isoformat("T") + "Z"  # RFC3339 timestamp
 
@@ -737,7 +775,7 @@ class PipelineService:
 						'jsonPayload.event_type="GCE_OPERATION_DONE" AND '
 						'jsonPayload.event_subtype="compute.instances.insert" AND '
 						'NOT error AND logName="projects/{project}/logs/compute.googleapis.com%2Factivity_log"'
-				).format(project=config.project_id, tz=timestamp),
+				).format(project=c.project_id, tz=timestamp),
 				"trigger": "topic"
 			},
 			"pipelineVmPreempted": {
@@ -746,7 +784,7 @@ class PipelineService:
 						'jsonPayload.event_type="GCE_OPERATION_DONE" AND '
 						'jsonPayload.event_subtype="compute.instances.preempted" AND '
 						'NOT error AND logName="projects/{project}/logs/compute.googleapis.com%2Factivity_log"'
-				).format(project=config.project_id, tz=timestamp),
+				).format(project=c.project_id, tz=timestamp),
 				"trigger": "topic"
 			},
 			"pipelineVmDelete": {
@@ -755,14 +793,14 @@ class PipelineService:
 						'jsonPayload.event_type="GCE_OPERATION_DONE" AND '
 						'jsonPayload.event_subtype="compute.instances.delete" AND '
 						'NOT error AND logName="projects/{project}/logs/compute.googleapis.com%2Factivity_log"'
-				).format(project=config.project_id, tz=timestamp),
+				).format(project=c.project_id, tz=timestamp),
 				"trigger": "topic",
 			}
 		}
 
 		for t, v in topics.iteritems():
-			topic = "projects/{project}/topics/{t}".format(project=config.project_id, t=t)
-			subscription = 'projects/{project}/subscriptions/{subscription}'.format(project=config.project_id, subscription=t)
+			topic = "projects/{project}/topics/{t}".format(project=c.project_id, t=t)
+			subscription = 'projects/{project}/subscriptions/{subscription}'.format(project=c.project_id, subscription=t)
 			try:
 				pubsub.projects().topics().get(topic=topic).execute()
 			except HttpError:
@@ -786,18 +824,18 @@ class PipelineService:
 					exit(-1)
 
 			body = {
-				"destination": "pubsub.googleapis.com/projects/{project}/topics/{t}".format(project=config.project_id, t=t),
+				"destination": "pubsub.googleapis.com/projects/{project}/topics/{t}".format(project=c.project_id, t=t),
 				"filter": v["filter"],
 				"name": t,
 				"outputVersionFormat": "V2"
 			}
 
-			sink = "projects/{project}/sinks/{t}".format(project=config.project_id, t=t)
+			sink = "projects/{project}/sinks/{t}".format(project=c.project_id, t=t)
 			try:
 				logging.projects().sinks().get(sinkName=sink).execute()
 			except HttpError as e:
 				try:
-					logging.projects().sinks().create(projectName="projects/{project}".format(project=config.project_id), body=body).execute()
+					logging.projects().sinks().create(projectName="projects/{project}".format(project=c.project_id), body=body).execute()
 				except HttpError as e:
 					print "ERROR: couldn't create the {t} log sink : {reason}".format(t=t, reason=e)
 					exit(-1)

@@ -1,10 +1,12 @@
 #!/usr/bin/env python
 import json
+import httplib2
 import argparse
 import subprocess
 from pipelines.routes import *
 from pipelines.paths import *
 from pipelines.service import PipelineService, PipelineServiceError
+from pipelines.config import PipelineConfig, PipelineConfigError
 
 
 if __name__ == "__main__":
@@ -22,10 +24,21 @@ if __name__ == "__main__":
 
 	logs = subparsers.add_parser("logs")
 	logs.add_argument("logsOperation", choices=["display"])
+
+	bootstrap = subparsers.add_parse("bootstrap")
 	
 	args, unknown = parser.parse_known_args()
 
-	if args.subcommand == "jobs":
+	if args.subcommand == "bootstrap":
+		try:
+			PipelineService.bootstrapServiceCluster()
+			PipelineService.bootstrapMessageHandlers()
+
+		except PipelineServiceError as e:
+			print "ERROR: couldn't bootstrap service cluster: {reason}".format(reason=e)
+			exit(-1)
+
+	elif args.subcommand == "jobs":
 		parser = argparse.ArgumentParser()
 
 		if args.jobsOperation == "submit":
