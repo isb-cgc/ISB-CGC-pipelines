@@ -130,7 +130,7 @@ class PipelineDatabase(object):
 				self._pipelinesDb.execute(create)
 
 			except sqlite3.Error as e:
-				raise PipelineDatabaseError("Couldn't create jobs table: {reason}".format(reason=e))
+				raise PipelineDatabaseError("Couldn't create entity {entity} with name {name}: {reason}".format(entity=entity, name=name, reason=e))
 
 			else:
 				self._dbConn.commit()

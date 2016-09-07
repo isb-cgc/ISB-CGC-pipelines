@@ -1,7 +1,7 @@
 FROM debian:jessie
 ENV debian_frontent NONINTERACTIVE
 RUN apt-get -y update && apt-get -y install build-essential python-dev libffi-dev libssl-dev python-pip git sqlite3 && apt-get -y clean
-RUN pip install -U virtualenv google-api-python-client pyinotify json-spec python-dateutil pika WebOb Paste webapp2
+RUN pip install -U virtualenv google-api-python-client pyinotify json-spec python-dateutil pika WebOb Paste webapp2 futures
 ADD . /usr/local/ISB-CGC-pipelines/
 RUN cp /usr/local/ISB-CGC-pipelines/lib/k8s/docker/pipelineServer /usr/bin/pipelineServer
 RUN cp /usr/local/ISB-CGC-pipelines/lib/scheduler/pipelineJobScheduler /usr/bin/pipelineJobScheduler

@@ -214,7 +214,8 @@ def main(host, port):
 		"row_id": "INTEGER PRIMARY KEY AUTOINCREMENT",
 		"job_id": "INTEGER",
 		"disk_name": "VARCHAR(128)",
-		"disk_zone": "VARCHAR(128)"
+		"disk_zone": "VARCHAR(128)",
+		"cleanup": "BOOLEAN"
 	}
 
 	try:

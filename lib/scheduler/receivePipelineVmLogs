@@ -16,7 +16,7 @@ from pipelines.db import DatabaseRecord
 from pipelines.queue import PipelineQueue, PipelineChannel, PipelineQueueError
 from pipelines.logger import PipelineJobLogger
 from pipelines.routes import *
-from pipelines.service import PipelineService, PipelineServiceError
+from pipelines.service import PipelineService, PipelineServiceError, DataDisk, DataDiskError
 
 PUBSUB_SCOPES = ['https://www.googleapis.com/auth/pubsub']
 CONFIG = PipelineConfig(path=os.environ["PIPELINES_CONFIG"])
@@ -35,7 +35,7 @@ CONFIG_WRITER_SERVICE_HOST = os.environ["CONFIG_WRITER_SERVICE_HOST"]
 
 class PubsubMessageHandlers(object):
 	@staticmethod
-	def pipelineVmLogs(log, compute, genomics):
+	def pipelineVmLogs(log, compute, genomics, conf):
 		def getProcessingTime(status):
 			# get the total processing time of the job
 			processingStart = None
@@ -260,36 +260,142 @@ class PubsubMessageHandlers(object):
 
 									else:
 										if len(children) > 0:
-											for c in children:  # TODO: start here
-												parents = [x[0] for x in pipelineDatabase.getParentJobs(c)]
-												totalParents = len(parents)
-												succeededParents = 1
-												parents.remove(int(jobInfo.job_id))
-
-												for p in parents:
-													status = pipelineDatabase.getJobInfo(select=["current_status"], where={"job_id": p})[0].current_status
-
-													if status == "SUCCEEDED":
-														succeededParents += 1
-
-													else:
-														break
-
-												if totalParents == succeededParents:
-													childRequest = json.loads(pipelineDatabase.getJobInfo(select=["request"], where={"job_id": c})[0].request)
-
-													msg = {
-														"job_id": c,
-														"request": childRequest
+											for c in children:
+												data = {
+													"select": [
+														"parent_id"
+													],
+													"criteria": {
+														"operation": "AND",
+														"values": [
+															{
+																"child_id": c
+															}
+														]
 													}
-													pipelineQueue.publish(json.dumps(msg))
+												}
+
+												try:
+													resp = PipelineService.sendRequest(SQLITE_READER_SERVICE_HOST,
+													                                   SQLITE_READER_SERVICE_PORT,
+													                                   "/read/job_dependencies",
+													                                   data=data)
+												except PipelineServiceError as e:
+													PipelineJobLogger.writeStderr(
+														"Couldn't get job dependency info: {reason}".format(reason=e))
+
+												else:
+													results = json.loads(resp)["results"]
+													parents = [x["parent_id"] for x in results]
+													totalParents = len(parents)
+													succeededParents = 1
+													parents.remove(int(jobInfo.job_id))
+
+													for p in parents:
+														data = {
+															"select": [
+																"current_status"
+															],
+															"criteria": {
+																"operation": "AND",
+																"values": [
+																	{
+																		"job_id": p
+																	}
+																]
+															}
+														}
+
+														try:
+															resp = PipelineService.sendRequest(
+																SQLITE_READER_SERVICE_HOST,
+																SQLITE_READER_SERVICE_PORT,
+																"/read/job_dependencies",
+																data=data)
+														except PipelineServiceError as e:
+															PipelineJobLogger.writeStderr(
+																"Couldn't get job status info: {reason}".format(
+																	reason=e))
+
+														else:
+															status = json.loads(resp)["results"][0]["current_status"]
+
+															if status == "SUCCEEDED":
+																succeededParents += 1
+
+															else:
+																break
+
+													if totalParents == succeededParents:
+														data = {
+															"select": [
+																"request"
+															],
+															"criteria": {
+																"operation": "AND",
+																"values": [
+																	{
+																		"job_id": c
+																	}
+																]
+															}
+														}
+
+														try:
+															resp = PipelineService.sendRequest(
+																SQLITE_READER_SERVICE_HOST,
+																SQLITE_READER_SERVICE_PORT,
+																"/read/jobs",
+																data=data)
+														except PipelineServiceError as e:
+															PipelineJobLogger.writeStderr(
+																"Couldn't get child job request: {reason}".format(
+																	reason=e))
+
+														else:
+															childRequest = json.loads(resp)["results"][0]["request"]
+
+															msg = {
+																"job_id": c,
+																"request": childRequest
+															}
+															pipelineQueue.publish(json.dumps(msg))
 
 										else:
 											PipelineJobLogger.writeStdout(
 												"Job {jobid} has no child jobs to check!".format(jobid=jobInfo.job_id))
 
-											# get the disks associated with the job
-											# for each disk, if cleanup is set to true then delete the disk and remove the record from the database
+											data = {
+												"select": ["disk_name", "disk_zone", "cleanup"],
+												"criteria": {
+													"operation": "AND",
+													"values": {
+														"job_id": jobInfo.job_id
+													}
+												}
+											}
+
+										try:
+											resp = PipelineService.sendRequest(
+												SQLITE_READER_SERVICE_HOST,
+												SQLITE_READER_SERVICE_PORT,
+												"/read/disks",
+												data=data)
+
+										except PipelineServiceError as e:
+											PipelineJobLogger.writeStderr(
+												"Couldn't get disk listing: {reason}".format(
+													reason=e))
+
+										else:
+											for d in json.loads(resp)["results"]:
+												if bool(d["cleanup"]):
+													try:
+														DataDisk.delete(conf, disk_name=d["disk_name"], disk_zone=d["disk_zone"])
+													except DataDiskError as e:
+														PipelineJobLogger.writeStderr(
+															"Couldn't delete disk {name}: {reason}".format(
+																disk=d["disk_name"], reason=e))
 
 										try:
 											msg = {
@@ -303,22 +409,60 @@ class PubsubMessageHandlers(object):
 								elif "error" in status.keys():
 									if jobInfo.current_status != "CANCELLED":
 										PipelineJobLogger.writeStdout("PIPELINE FAILED ({job}): {reason}".format(job="{pipeline}-{tag}".format(pipeline=jobInfo.pipeline_name, tag=jobInfo.tag), reason=status["error"]["message"]))
-										pipelineDatabase.updateJob(jobInfo.job_id, keyName="job_id", setValues={"current_status": "FAILED", "end_time": status["metadata"]["endTime"], "processing_time": processingTime})
-										if len(children) > 0:
-											PipelineJobLogger.writeStderr("Couldn't start downstream jobs for job {j} ({pipeline}-{tag}) : status is FAILED".format(
-													j=jobInfo.job_id, pipeline=jobInfo.pipeline_name, tag=jobInfo.tag))
+
+										data = {
+											"updates": {
+												"current_status": "FAILED",
+												"processing_time": processingTime,
+												"end_time": status["metadata"]["endTime"]
+											},
+											"criteria": {
+												"job_id": jobInfo.job_id
+											}
+										}
 
 										try:
-											msg = {
-												"current_status": "FAILED"
-											}
-											pipelineChannel.publishToExchange('WATCH_EXCHANGE', "PIPELINE_JOB_{j}".format(j=jobInfo.job_id), msg)
+											resp = PipelineService.sendRequest(SQLITE_WRITER_SERVICE_HOST,
+											                                   SQLITE_WRITER_SERVICE_PORT,
+											                                   "/update/jobs",
+											                                   data=data)
 
-										except PipelineQueueError as e:
-											pass
+										except PipelineServiceError as e:
+											PipelineJobLogger.writeStderr(
+												"Couldn't update job record: {reason}".format(reason=e))
+
+										else:
+											if len(children) > 0:
+												PipelineJobLogger.writeStderr("Couldn't start downstream jobs for job {j} ({pipeline}-{tag}) : status is FAILED".format(
+														j=jobInfo.job_id, pipeline=jobInfo.pipeline_name, tag=jobInfo.tag))
+
+											try:
+												msg = {
+													"current_status": "FAILED"
+												}
+												pipelineChannel.publishToExchange('WATCH_EXCHANGE', "PIPELINE_JOB_{j}".format(j=jobInfo.job_id), msg)
+
+											except PipelineQueueError as e:
+												pass
 
 					if status is None:
-						pipelineDatabase.updateJob(jobInfo.job_id, setValues={"current_status": "UNKNOWN"}, keyName="job_id")
+						data = {
+							"updates": {
+								"current_status": "UNKNOWN"
+							},
+							"criteria": {
+								"job_id": jobInfo.job_id
+							}
+						}
+
+						try:
+							resp = PipelineService.sendRequest(SQLITE_WRITER_SERVICE_HOST,
+							                                   SQLITE_WRITER_SERVICE_PORT, "/update/jobs",
+							                                   data=data)
+
+						except PipelineServiceError as e:
+							PipelineJobLogger.writeStderr(
+								"Couldn't update job record: {reason}".format(reason=e))
 
 		elif log["jsonPayload"]["event_subtype"] == "compute.instances.insert":
 			zone = log["resource"]["labels"]["zone"]
@@ -330,31 +474,76 @@ class PubsubMessageHandlers(object):
 
 			else:
 				operationId = instanceInfo["description"].partition("Operation: ")[-1]
+				data = {
+					"select": ["job_id"],
+					"criteria": {
+						"operation": "AND",
+						"values": [
+							{
+								"operation_id": operationId
+							}
+						]
+					}
+				}
+
 				try:
-					jobId = pipelineDatabase.getJobInfo(select=["job_id"], where={"operation_id": operationId})[0].job_id
-				except PipelineDatabaseError as e:
-					pass # TODO: handle
+					resp = PipelineService.sendRequest(SQLITE_READER_SERVICE_HOST, SQLITE_READER_SERVICE_PORT,
+					                                   "/read/jobs", data=data)
+
+				except PipelineServiceError as e:
+					PipelineJobLogger.writeStderr(
+						"Couldn't get job info: {reason}".format(reason=e))
 
 				PipelineJobLogger.writeStdout("Instance {i} (operation {o}) started!".format(i=instance, o=operationId))
-				pipelineDatabase.updateJob(operationId, keyName="operation_id", setValues={"instance_name": instance})
+
+				data = {
+					"updates": {
+						"instance_name": instance
+					},
+					"criteria": {
+						"operation_id": operationId
+					}
+				}
 
 				try:
-					jobInfo = pipelineDatabase.getJobInfo(select=["operation_id", "current_status"],
-					                                      where={"instance_name": instance})[0]
+					resp = PipelineService.sendRequest(SQLITE_WRITER_SERVICE_HOST,
+					                                   SQLITE_WRITER_SERVICE_PORT, "/update/jobs",
+					                                   data=data)
 
-				except IndexError:
+				except PipelineServiceError as e:
 					PipelineJobLogger.writeStderr(
-						"Instance {i} deleted, but no record exists in jobs database".format(i=instance))
+						"Couldn't update job record: {reason}".format(reason=e))
 
 				else:
-					try:
-						msg = {
-							"current_status": "RUNNING"
+					data = {
+						"select": ["job_id"],
+						"criteria": {
+							"operation": "AND",
+							"values": [
+								{
+									"instance_name": instance
+								}
+							]
 						}
-						pipelineChannel.publishToExchange('WATCH_EXCHANGE', "PIPELINE_JOB_{j}".format(j=jobInfo.job_id), msg)
+					}
 
-					except PipelineQueueError as e:
-						pass
+					try:
+						resp = PipelineService.sendRequest(SQLITE_READER_SERVICE_HOST, SQLITE_READER_SERVICE_PORT,
+						                                   "/read/jobs", data=data)
+
+					except PipelineServiceError:
+						PipelineJobLogger.writeStderr(
+							"Instance {i} deleted, but no record exists in jobs database".format(i=instance))
+
+					else:
+						try:
+							msg = {
+								"current_status": "RUNNING"
+							}
+							pipelineChannel.publishToExchange('WATCH_EXCHANGE', "PIPELINE_JOB_{j}".format(j=json.loads(resp)["results"][0]["job_id"]), msg)
+
+						except PipelineQueueError as e:
+							pass
 							
 
 def main(args, CONFIG):

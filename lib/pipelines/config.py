@@ -1,11 +1,11 @@
 import os
 import pyinotify
 from ConfigParser import SafeConfigParser, NoOptionError, NoSectionError
-from pipelines.logger import PipelineLogger
-from pipelines.paths import *
+from logger import PipelineJobLogger
+from paths import *
 
 
-class PipelineConfigError(Exception):  # TODO: implement
+class PipelineConfigError(Exception):
 	def __init__(self, msg):
 		super(PipelineConfigError, self).__init__()
 		self.msg = msg

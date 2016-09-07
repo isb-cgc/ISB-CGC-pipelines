@@ -345,7 +345,7 @@ class PipelineService:
 		volumeUrl = API_ROOT + PERSISTENT_VOLUMES_URI.format(namespace=namespaceSpec["metadata"]["name"])
 
 		# pipeline front-end service
-		path = os.path.join(TEMPLATES_PATH, "pipeline-frontend-service.json.jinja2")  # TODO: rafactor paths
+		path = os.path.join(TEMPLATES_PATH, "pipeline-frontend-service.json.jinja2")
 		with open(path) as f:
 			pipelineFrontendServiceSpec = prepareTemplate(f)
 
@@ -422,8 +422,8 @@ class PipelineService:
 		createResource(rcUrl, API_HEADERS, sqliteReaderRcSpec)
 
 		# temporary rabbitmq-rc (with hostpath volume)
-		with open(os.path.join(TEMPLATES_PATH, "temporary-rabbitmq-rc.json.jinja2")) as f:
-			rabbitmqRcSpec = prepareTemplate(f)  # TODO: kwargs
+		with open(os.path.join(TEMPLATES_PATH, "rabbitmq-rc.json.jinja2")) as f:
+			rabbitmqRcSpec = prepareTemplate(f)
 
 		rabbitmqRcSpec["spec"]["template"]["spec"]["volumes"][0] = {
 			"hostPath": {
@@ -437,7 +437,7 @@ class PipelineService:
 
 		# temporary pipeline frontend (with hostpath volume)
 		with open(os.path.join(TEMPLATES_PATH, "pipeline-frontend-rc.json.jinja2")) as f:
-			pipelineFrontendRcSpec = prepareTemplate(f, replicas=1)  # TODO: add replication factor to local config or cli
+			pipelineFrontendRcSpec = prepareTemplate(f, replicas=1)  # TODO: add replication factor to local config or cli (?)
 
 		pipelineFrontendRcSpec["spec"]["template"]["spec"]["volumes"][0] = {
 			"hostPath": {
@@ -518,7 +518,15 @@ class PipelineService:
 		createResource(rcUrl, API_HEADERS, pipelineCancellerRcSpec)
 
 		# TODO: get the rabbitmq pod name
-		rabbitmqPod = ""
+		try:
+			output = subprocess.check_output(["kubectl", "describe", "pods", rabbitmqRcSpec["metadata"]["name"]])
+
+		except subprocess.CalledProcessError as e:
+			print "ERROR: coulen't get the rabbitmq pod name: {reason}".format(reason=e)
+			exit(-1)
+
+		rabbitmqPod = output.split('\n')[1].split(' ')[0]
+		print "rabbitmq pod: " + rabbitmqPod
 
 		try:
 			subprocess.check_call(["kubectl", "port-forward", rabbitmqPod, "5672:5672"])
@@ -667,63 +675,51 @@ class PipelineService:
 		deleteResource(rcUrl, API_HEADERS, rabbitmqRcSpec["metadata"]["name"])
 
 		# create the permanent volumes
-
-		# permanent (pd) sqlite volume
-		with open(os.path.join(TEMPLATES_PATH, "sqlite-volume.json.jinja2")) as f:
-			sqliteVolume = prepareTemplate(f)  # TODO: kwargs
-
-		createResource(volumeUrl, API_HEADERS, sqliteVolume)
-
-		# permanent (pd) config volume
-		with open(os.path.join(TEMPLATES_PATH, "config-volume.json.jinja2")) as f:
-			configVolume = prepareTemplate(f)  # TODO: kwargs
-
-		createResource(volumeUrl, API_HEADERS, configVolume)
-
-		# permanent (pd) rabbitmq volume
-		with open(os.path.join(TEMPLATES_PATH, "rabbitmq-volume.json.jinja2")) as f:
-			rabbitmqVolume = prepareTemplate(f)  # TODO: kwargs
-
-		createResource(volumeUrl, API_HEADERS, rabbitmqVolume)
-
-		# restart the sqlite and rabbitmq RCs with the newly created volumes
 		volume = {
-			"name": "rabbitmq-data",
+			"name": "{{ volName }}",
 			"gcePersistentDisk": {
 				"pdName": "{{ pdName }}",
-				"readOnly": "false",
+				"readOnly": "{{ ro }}",
 				"fsType": "ext4"
 			}
 		}
 
+
+		# restart the sqlite and rabbitmq RCs with the newly created volumes
+
 		# sqlite-reader rc
 		with open(os.path.join(TEMPLATES_PATH, "sqlite-reader-rc.json.jinja2")) as f:
-			sqliteReaderRcSpec = prepareTemplate(f, pdName="")  # TODO: pdName
+			sqliteReaderRcSpec = prepareTemplate(f)
 
+		sqliteReaderRcSpec["spec"]["template"]["spec"]["volumes"] = prepareTemplate(volume, pdName=databaseReq["disk_name"], volName=databaseReq["disk_name"], ro=True)
 		createResource(rcUrl, API_HEADERS, sqliteReaderRcSpec)
 
 		# sqlite-writer rc
 		with open(os.path.join(TEMPLATES_PATH, "sqlite-writer-rc.json.jinja2")) as f:
-			sqliteWriterRcSpec = prepareTemplate(f, pdName="")  # TODO: pdName
+			sqliteWriterRcSpec = prepareTemplate(f, pdName="")
 
+		sqliteWriterRcSpec["spec"]["template"]["spec"]["volumes"] = prepareTemplate(volume, pdName=databaseReq["disk_name"], volName=databaseReq["disk_name"], ro=False)
 		createResource(rcUrl, API_HEADERS, sqliteWriterRcSpec)
 
 		# config-writer rc
 		with open(os.path.join(TEMPLATES_PATH, "config-writer-rc.json.jinja2")) as f:
-			configWriterRcSpec = prepareTemplate(f, pdName="")  # TODO: pdName
+			configWriterRcSpec = prepareTemplate(f, pdName="")
 
+		configWriterRcSpec["spec"]["template"]["spec"]["volumes"] = prepareTemplate(volume, pdName=configReq["disk_name"], volName=configReq["disk_name"], ro=False)
 		createResource(rcUrl, API_HEADERS, configWriterRcSpec)
 
 		# rabbitmq rc
 		with open(os.path.join(TEMPLATES_PATH, "rabbitmq-rc.json.jinja2")) as f:
-			rabbitmqRcSpec = prepareTemplate(f, pdName="")  # TODO: pdName
+			rabbitmqRcSpec = prepareTemplate(f, pdName="")
 
+		rabbitmqRcSpec["spec"]["template"]["spec"]["volumes"] = prepareTemplate(volume, pdName=msgReq["disk_name"], volName=msgReq["disk_name"], ro=False)
 		createResource(rcUrl, API_HEADERS, rabbitmqRcSpec)
 
 		# pipeline front-end rc
 		with open(os.path.join(TEMPLATES_PATH, "pipeline-frontend-rc.json.jinja2")) as f:
 			pipelineFrontendRcSpec = prepareTemplate(f, replicas=5)  # TODO: add replication factor to local config or cli
 
+		pipelineFrontendRcSpec["spec"]["template"]["spec"]["volumes"] = prepareTemplate(volume, pdName=configReq["disk_name"], volName=configReq["disk_name"], ro=True)
 		createResource(rcUrl, API_HEADERS, pipelineFrontendRcSpec)
 
 		print "Service bootstrap successful!"
