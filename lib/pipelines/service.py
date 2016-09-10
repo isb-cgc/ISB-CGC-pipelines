@@ -4,7 +4,7 @@ import string
 import requests
 import httplib2
 import subprocess
-import futures
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from time import sleep
 from random import SystemRandom
 from datetime import datetime
@@ -639,10 +639,10 @@ class PipelineService:
 		error = 0
 		errors = []
 
-		with futures.ThreadPoolExecutor(2) as p:
+		with ThreadPoolExecutor(2) as p:
 			statuses = dict((p.submit(PipelineService.watchJob, j, 'WATCH_EXCHANGE') for j in jobIds))
 
-			for s in futures.as_completed(statuses):
+			for s in as_completed(statuses):
 				if s.exception() is not None:
 					errors.append("ERROR: Couldn't create disk volume: {reason}".format(reason=s.exception()))
 					error = 1
