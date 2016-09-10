@@ -1,7 +1,7 @@
 import os
 import pyinotify
 from ConfigParser import SafeConfigParser, NoOptionError, NoSectionError
-from pipelines.logger import PipelineLogger
+from pipelines.logger import PipelineJobLogger
 from pipelines.paths import *
 
 
@@ -145,5 +145,5 @@ class PipelineConfigUpdateHandler(pyinotify.ProcessEvent):
 		self._config = config
 
 	def process_IN_CLOSE_WRITE(self, event):
-		PipelineLogger.writeStdout("Refreshing configuration ...")
+		PipelineJobLogger.writeStdout("Refreshing configuration ...")
 		self._config.refresh()
