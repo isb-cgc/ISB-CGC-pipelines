@@ -1,16 +1,31 @@
 import os
 import math
 import json
-import urllib
+import httplib2
 import requests
 import subprocess
 import pprint
+
+from googleapiclient import discovery
+from oauth2client.client import GoogleCredentials
+from googleapiclient.errors import HttpError
 
 
 class DataUtilsError(Exception):
 	def __init__(self, msg):
 		super(DataUtilsError, self).__init__()
 		self.msg = msg
+
+class GoogleApiService(object):
+	@staticmethod
+	def create(apiName, apiVersion):
+		credentials = GoogleCredentials.application_default_credentials()
+		http = credentials.authorize(httplib2.Http())
+
+		if credentials.access_token_expired:
+			credentials.refresh(http)
+
+		return discovery.build(apiName, apiVersion, http)
 
 class GDCDataUtils(object):
 	@ staticmethod
@@ -28,7 +43,7 @@ class GDCDataUtils(object):
 		return requests.get(url, params=params, headers=headers)
 
 	@staticmethod
-	def getFilename(fileUuid, tokenFile):
+	def getFilenames(fileUuid, tokenFile):
 		filters = {
 			"op": "=",
 			"content": {
@@ -43,25 +58,34 @@ class GDCDataUtils(object):
 
 		fileInfo = GDCDataUtils.query(tokenFile, "files", params=params)
 
-		return str(fileInfo.json()["data"]["hits"][0]["file_name"])
+		return [str(x["file_name"]) for x in fileInfo.json()["data"]["hits"][0]]
 
 	@staticmethod
-	def getFilesize(fileUuid, tokenFile):
-		filters = {
-			"op": "=",
-			"content": {
-				"field": "file_id",
-				"value": [fileUuid]
+	def getFilesize(fileUuid, tokenFile=None, projectId=None):
+		if tokenFile:
+			filters = {
+				"op": "=",
+				"content": {
+					"field": "file_id",
+					"value": [fileUuid]
+				}
 			}
-		}
 
-		params = {
-			"filters": json.dumps(filters)
-		}
+			params = {
+				"filters": json.dumps(filters)
+			}
 
-		fileInfo = GDCDataUtils.query(tokenFile, "files", params=params)
+			fileInfo = GDCDataUtils.query(tokenFile, "files", params=params)
 
-		return int(fileInfo.json()["data"]["hits"][0]["file_size"])
+			return int(fileInfo.json()["data"]["hits"][0]["file_size"])
+
+		else:
+			bq = GoogleApiService.create('bq', 'v2')
+			body = {
+				"query": "SELECT SUM(a_file_size) FROM GDC_metadata.GCS_join1 WHERE file_id = {fileUuid}".format(fileUuid=fileUuid)
+			}
+			results = bq.jobs().query(projectId=projectId, body=body).execute()
+			return results["rows"][results["rows"].keys()[0]][0]
 
 	@staticmethod
 	def constructGCSFilePath(fileUuid, tokenFile):
@@ -91,9 +115,11 @@ class GDCDataUtils(object):
 		)
 
 	@staticmethod
-	def calculateDiskSize(tokenFile, fileUuid=None, inputFile=None, inputFileSize=None, scalingFactor=None, roundToNearestGbInterval=None):
-		if inputFile is not None:
-			fileSize = int(subprocess.check_output(["gsutil", "du", inputFile]).split(' ')[0])
+	def calculateDiskSize(tokenFile=None, fileUuid=None, inputFiles=None, inputFileSize=None, scalingFactor=None, roundToNearestGbInterval=None):
+		if inputFiles is not None:
+			fileSize = 0
+			for f in inputFiles:
+				fileSize += int(subprocess.check_output(["gsutil", "du", f]).split(' ')[0])
 
 		elif fileUuid is not None:
 			fileSize = GDCDataUtils.getFilesize(fileUuid, tokenFile)
