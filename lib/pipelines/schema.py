@@ -52,7 +52,7 @@ class PipelineSchema(object):
 			if diskType is None:
 				diskType = "PERSISTENT_SSD"
 
-			self.addDisk(name, diskType, diskSize, mountPath)
+			self.addDisk(name=name, type=diskType, size=diskSize, mountPath=mountPath)
 
 		# add inputs
 		# TODO: input validation
@@ -147,18 +147,18 @@ class PipelineSchema(object):
 			}
 		})
 
-	def addDisk(self, name, diskType, sizeGb, mountPath, autoDelete=True, readOnly=False):
+	def addDisk(self, name=None, type=None, size=None, mountPath=None, autoDelete=True, readOnly=False):
 		self._schema["request"]["pipelineArgs"]["resources"]["disks"].append({
 			"name": name,
-			"type": diskType,
-			"sizeGb": sizeGb,
+			"type": type,
+			"sizeGb": size,
 			"autoDelete": autoDelete,
 			"readOnly": readOnly
 		})
 		self._schema["request"]["ephemeralPipeline"]["resources"]["disks"].append({
 			"name": name,
-			"type": diskType,
-			"sizeGb": sizeGb,
+			"type": type,
+			"sizeGb": size,
 			"autoDelete": autoDelete,
 			"readOnly": readOnly,
 			"mountPoint": mountPath
