@@ -47,7 +47,7 @@ class DataDisk(object):
 		# submit a request to the gce api for a new disk with the given parameters
 		# if inputs is not None, run a pipeline job to populate the disk
 		projectId = config.project_id
-		zones = [zone if zone is not None else x for x in config.zones]
+		#zones = [zone if zone is not None else x for x in config.zones.split(',')]
 
 		credentials = GoogleCredentials.get_application_default()
 		http = credentials.authorize(httplib2.Http())
@@ -62,29 +62,29 @@ class DataDisk(object):
 			"PERSISTENT_SSD": "pd-ssd"
 		}
 
-		for z in zones:
-			body = {
-				"kind": "compute#disk",
-				"zone": "projects/{projectId}/zones/{zone}".format(projectId=projectId, zone=z),
-				"name": name,
-				"sizeGb": size,
-				"type": "projects/{projectId}/zones/{zone}/diskTypes/{type}".format(projectId=projectId, zone=z,
-				                                                                    type=diskTypes[type])
-			}
+		#for z in zones:
+		body = {
+			"kind": "compute#disk",
+			"zone": "projects/{projectId}/zones/{zone}".format(projectId=projectId, zone=z),
+			"name": name,
+			"sizeGb": size,
+			"type": "projects/{projectId}/zones/{zone}/diskTypes/{type}".format(projectId=projectId, zone=zone,
+			                                                                    type=diskTypes[type])
+		}
 
+		try:
+			resp = gce.disks().insert(project=projectId, zone=z, body=body).execute()
+		except HttpError as e:
+			raise DataDiskError("Couldn't create data disk {n}: {reason}".format(n=name, reason=e))
+
+		while True:
 			try:
-				resp = gce.disks().insert(project=projectId, zone=z, body=body).execute()
-			except HttpError as e:
-				raise DataDiskError("Couldn't create data disk {n}: {reason}".format(n=name, reason=e))
-
-			while True:
-				try:
-					result = gce.zoneOperations().get(project=projectId, zone=z, operation=resp['name']).execute()
-				except HttpError:
+				result = gce.zoneOperations().get(project=projectId, zone=z, operation=resp['name']).execute()
+			except HttpError:
+				break
+			else:
+				if result['status'] == 'DONE':
 					break
-				else:
-					if result['status'] == 'DONE':
-						break
 
 	@staticmethod
 	def delete(config, disk_name=None, disk_zone=None):  # TODO: implement
