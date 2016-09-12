@@ -47,7 +47,7 @@ class DataDisk(object):
 		# submit a request to the gce api for a new disk with the given parameters
 		# if inputs is not None, run a pipeline job to populate the disk
 		projectId = config.project_id
-		zones = [zone if zone is not None else x for x in config.zones.split(',')]
+		zones = [zone if zone is not None else x for x in config.zones]
 
 		credentials = GoogleCredentials.get_application_default()
 		http = credentials.authorize(httplib2.Http())
