@@ -147,18 +147,18 @@ class PipelineSchema(object):
 			}
 		})
 
-	def addDisk(self, name=None, diskType=None, size=None, mountPath=None, autoDelete=True, readOnly=False):
+	def addDisk(self, name=None, diskType=None, diskSize=None, mountPath=None, autoDelete=True, readOnly=False):
 		self._schema["request"]["pipelineArgs"]["resources"]["disks"].append({
 			"name": name,
 			"type": diskType,
-			"sizeGb": size,
+			"sizeGb": diskSize,
 			"autoDelete": autoDelete,
 			"readOnly": readOnly
 		})
 		self._schema["request"]["ephemeralPipeline"]["resources"]["disks"].append({
 			"name": name,
 			"type": diskType,
-			"sizeGb": size,
+			"sizeGb": diskSize,
 			"autoDelete": autoDelete,
 			"readOnly": readOnly,
 			"mountPoint": mountPath
