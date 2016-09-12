@@ -166,7 +166,7 @@ class PipelineSchema(object):
 			}
 		})
 
-	def addDisk(self, name, diskType, sizeGb, mountPath, autoDelete=True, readOnly=False):
+	def addDisk(self, name=None, diskType=None, sizeGb=None, mountPath=None, autoDelete=True, readOnly=False):
 		self._schema["request"]["pipelineArgs"]["resources"]["disks"].append({
 			"name": name,
 			"type": diskType,
