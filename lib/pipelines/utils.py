@@ -64,13 +64,14 @@ class PipelineSchema(object):
 		}
 		self._metadata = {}
 
+		defaultMountPath = "/{pipeline}".format(pipeline=name)
+
 		# if disk info provided, add a disk
 		if diskSize is not None:
-			mountPath = "/{pipeline}".format(pipeline=name)
 			if diskType is None:
 				diskType = "PERSISTENT_SSD"
 
-			self.addDisk(name, diskType, diskSize, mountPath)
+			self.addDisk(name, diskType, diskSize, defaultMountPath)
 
 		# add inputs
 		# TODO: input validation
@@ -113,12 +114,12 @@ class PipelineSchema(object):
 				'cd {mnt} && ls && '
 				'chmod u+x {script} && '
 				'{env}./{script}'
-			).format(mnt=mountPath, script=script, env=envString)
+			).format(mnt=defaultMountPath, script=script, env=envString)
 		elif cmd is not None:
 			command = (
 				'cd {mnt} && '
 				'{env}{cmd}'
-			).format(mnt=mountPath, env=envString, cmd=cmd)
+			).format(mnt=defaultMountPath, env=envString, cmd=cmd)
 
 		self.setCmd(command)
 
