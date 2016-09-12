@@ -19,7 +19,7 @@ class DataUtilsError(Exception):
 class GoogleApiService(object):
 	@staticmethod
 	def create(apiName, apiVersion):
-		credentials = GoogleCredentials.application_default_credentials()
+		credentials = GoogleCredentials.get_application_default()
 		http = credentials.authorize(httplib2.Http())
 
 		if credentials.access_token_expired:
