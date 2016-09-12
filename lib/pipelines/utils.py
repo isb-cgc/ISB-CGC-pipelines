@@ -71,7 +71,7 @@ class PipelineSchema(object):
 			if diskType is None:
 				diskType = "PERSISTENT_SSD"
 
-			self.addDisk(name, diskType, diskSize, defaultMountPath)
+			self.addDisk(name=name, diskType=diskType, diskSize=diskSize, mountPath=defaultMountPath)
 
 		# add inputs
 		# TODO: input validation
