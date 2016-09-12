@@ -74,6 +74,8 @@ def main(config):
 				cpuTest = cpuTotal - (cpuUsage + body["request"]["pipelineArgs"]["resources"]["minimumCpuCores"])
 
 				for d in body["request"]["pipelineArgs"]["resources"]["disks"]:
+					PipelineSchedulerUtils.writeStderr(d)
+					PipelineSchedulerUtils.writeStderr(d["sizeGb"])
 					if d["type"] == "PERSISTENT_SSD":
 						ssdTest = ssdTotal - (ssdUsage + int(d["sizeGb"]))
 					elif d["type"] == "PERSISTENT_HDD":
