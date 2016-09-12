@@ -43,7 +43,7 @@ class DataDiskError(Exception):
 
 class DataDisk(object):
 	@staticmethod
-	def create(config, disk_name=None, disk_size=None, disk_type="PERSISTENT_SSD", zone=None):
+	def create(config, name=None, size=None, type="PERSISTENT_SSD", zone=None):
 		# submit a request to the gce api for a new disk with the given parameters
 		# if inputs is not None, run a pipeline job to populate the disk
 		projectId = config.project_id
@@ -66,16 +66,16 @@ class DataDisk(object):
 			body = {
 				"kind": "compute#disk",
 				"zone": "projects/{projectId}/zones/{zone}".format(projectId=projectId, zone=z),
-				"name": disk_name,
-				"sizeGb": disk_size,
+				"name": name,
+				"sizeGb": size,
 				"type": "projects/{projectId}/zones/{zone}/diskTypes/{type}".format(projectId=projectId, zone=z,
-				                                                                    type=diskTypes[disk_type])
+				                                                                    type=diskTypes[type])
 			}
 
 			try:
 				resp = gce.disks().insert(project=projectId, zone=z, body=body).execute()
 			except HttpError as e:
-				raise DataDiskError("Couldn't create data disk {n}: {reason}".format(n=disk_name, reason=e))
+				raise DataDiskError("Couldn't create data disk {n}: {reason}".format(n=name, reason=e))
 
 			while True:
 				try:
