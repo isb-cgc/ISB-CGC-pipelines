@@ -173,22 +173,43 @@ class PipelineSchema(object):
 		})
 
 	def addDisk(self, name=None, diskType=None, sizeGb=None, mountPath=None, source=None, autoDelete=True, readOnly=False):
-		disk = {
-			"name": name,
-			"type": diskType,
-			"sizeGb": sizeGb,
-			"autoDelete": autoDelete,
-			"readOnly": readOnly
-		}
-
 		if source is not None:
-			disk.update({"source": source})
+			self._schema["request"]["pipelineArgs"]["resources"]["disks"].append({
+				"name": name,
+				"type": diskType,
+				"sizeGb": sizeGb,
+				"autoDelete": autoDelete,
+				"readOnly": readOnly,
+				"source": source
+			})
 
-		self._schema["request"]["pipelineArgs"]["resources"]["disks"].append(disk)
+			self._schema["request"]["ephemeralPipeline"]["resources"]["disks"].append({
+				"name": name,
+				"type": diskType,
+				"sizeGb": sizeGb,
+				"autoDelete": autoDelete,
+				"readOnly": readOnly,
+				"mountPoint": mountPath,
+				"source": source
+			})
 
-		disk.update({"mountPoint": mountPath})
+		else:
+			self._schema["request"]["pipelineArgs"]["resources"]["disks"].append({
+				"name": name,
+				"type": diskType,
+				"sizeGb": sizeGb,
+				"autoDelete": autoDelete,
+				"readOnly": readOnly
+			})
 
-		self._schema["request"]["ephemeralPipeline"]["resources"]["disks"].append(disk)
+			self._schema["request"]["ephemeralPipeline"]["resources"]["disks"].append({
+				"name": name,
+				"type": diskType,
+				"sizeGb": sizeGb,
+				"autoDelete": autoDelete,
+				"readOnly": readOnly,
+				"mountPoint": mountPath
+			})
 
 	def setLogOutput(self, gcsPath):
 		self._schema["request"]["pipelineArgs"]["logging"]["gcsPath"] = gcsPath
