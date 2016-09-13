@@ -23,7 +23,7 @@ MODULE_PATH = "/usr/local/ISB-CGC-pipelines/lib"  # TODO: move path to configura
 
 
 class PipelineSchema(object):
-	def __init__(self, name, config, logsPath, imageName, scriptUrl=None, cmd=None, cores=1, mem=1, diskSize=None,
+	def __init__(self, name, config, logsPath, imageName, workdir=None, scriptUrl=None, cmd=None, cores=1, mem=1, diskSize=None,
 	             diskType=None, env=None, inputs=None, outputs=None, tag=None, children=None, metadata=None,
 	             preemptible=False):  # config must be an instance of pipelines.utils.PipelinesConfig
 		self.name = name
@@ -66,14 +66,15 @@ class PipelineSchema(object):
 		}
 		self._metadata = {}
 
-		defaultMountPath = "/{pipeline}".format(pipeline=name)
+		if workdir is None:
+			workdir = "/{name}".format(name=name)
 
 		# if disk info provided, add a disk
 		if diskSize is not None:
 			if diskType is None:
 				diskType = "PERSISTENT_SSD"
 
-			self.addDisk(name=name, diskType=diskType, diskSize=diskSize, mountPath=defaultMountPath)
+			self.addDisk(name=name, diskType=diskType, diskSize=diskSize, mountPath=workdir)
 
 		# add inputs
 		# TODO: input validation
@@ -114,15 +115,17 @@ class PipelineSchema(object):
 			script = os.path.basename(scriptUrl)
 			self.addInput("pipelineScript", name, script, scriptUrl)
 			command = (
-				'cd {mnt} && ls && '
+				'mkdir -p {workdir} && '
+				'cd {workdir} && ls && '
 				'chmod u+x {script} && '
 				'{env}./{script}'
-			).format(mnt=defaultMountPath, script=script, env=envString)
+			).format(workdir=workdir, script=script, env=envString)
 		elif cmd is not None:
 			command = (
-				'cd {mnt} && '
+				'mkdir -p {workdir} && '
+				'cd {workdir} && '
 				'{env}{cmd}'
-			).format(mnt=defaultMountPath, env=envString, cmd=cmd)
+			).format(workdir=workdir, env=envString, cmd=cmd)
 
 		self.setCmd(command)
 
