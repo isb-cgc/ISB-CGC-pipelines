@@ -84,7 +84,7 @@ class DataDisk(object):
 				if result['status'] == 'DONE':
 					break
 
-		return "projects/{p}/zones/{z}/disks/{d}".format(p=config.project_id, zones=zone, d=name)
+		return "projects/{p}/zones/{z}/disks/{d}".format(p=config.project_id, z=zone, d=name)
 
 	@staticmethod
 	def delete(config, disk_name=None, disk_zone=None):  # TODO: implement
