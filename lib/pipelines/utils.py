@@ -102,6 +102,7 @@ class PipelineSchema(object):
 
 		# prepare environment string
 		# TODO: set some default config variables in the envString (i.e., JOBNAME)
+		# TODO: implement a "setEnv" method which takes arbitrary kwargs
 		if env is not None:
 			envString = " ".join(env.split(',')) + " "
 		else:
@@ -146,7 +147,7 @@ class PipelineSchema(object):
 	def addChild(self, child):
 		self._schema["children"].append(child.name)
 
-	def addInput(self, name, disk, localPath, gcsPath):
+	def addInput(self, name=None, disk=None, localPath=None, gcsPath=None):
 		self._schema["request"]["pipelineArgs"]["inputs"][name] = gcsPath
 
 		self._schema["request"]["ephemeralPipeline"]["inputParameters"].append({
@@ -157,7 +158,7 @@ class PipelineSchema(object):
 			}
 		})
 
-	def addOutput(self, name, disk, localPath, gcsPath):
+	def addOutput(self, name=None, disk=None, localPath=None, gcsPath=None):
 		self._schema["request"]["pipelineArgs"]["outputs"][name] = gcsPath
 
 		self._schema["request"]["ephemeralPipeline"]["outputParameters"].append({
