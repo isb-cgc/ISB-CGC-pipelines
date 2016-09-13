@@ -84,6 +84,8 @@ class DataDisk(object):
 				if result['status'] == 'DONE':
 					break
 
+		return resp["selfLink"]
+
 	@staticmethod
 	def delete(config, disk_name=None, disk_zone=None):  # TODO: implement
 		# submit a request to the gce api for a new disk with the given parameters
