@@ -227,6 +227,9 @@ class PipelineBuilder(object):
 		self._pipelineDbUtils = PipelineDbUtils(self._config)
 		self._pipelineQueueUtils = PipelineQueueUtils('WAIT_Q')
 
+	def getSchema(self):
+		return self._schema
+
 	def addStep(self, root):  # root must be an instance of PipelineSchema
 		if self.hasStep(root.name):
 			raise ValueError("Pipeline already contains a step with name {n}".format(n=root.name))
