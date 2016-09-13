@@ -179,7 +179,6 @@ class PipelineSchema(object):
 				"type": diskType,
 				"sizeGb": sizeGb,
 				"autoDelete": autoDelete,
-				"readOnly": readOnly,
 				"source": source
 			})
 
@@ -198,8 +197,7 @@ class PipelineSchema(object):
 				"name": name,
 				"type": diskType,
 				"sizeGb": sizeGb,
-				"autoDelete": autoDelete,
-				"readOnly": readOnly
+				"autoDelete": autoDelete
 			})
 
 			self._schema["request"]["ephemeralPipeline"]["resources"]["disks"].append({
