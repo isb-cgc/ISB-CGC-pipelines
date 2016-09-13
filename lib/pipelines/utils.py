@@ -17,6 +17,8 @@ from ConfigParser import SafeConfigParser, NoOptionError, NoSectionError
 
 from googleapiclient.errors import HttpError
 
+import pprint
+
 MODULE_PATH = "/usr/local/ISB-CGC-pipelines/lib"  # TODO: move path to configuration file
 
 
@@ -227,9 +229,6 @@ class PipelineBuilder(object):
 		self._pipelineDbUtils = PipelineDbUtils(self._config)
 		self._pipelineQueueUtils = PipelineQueueUtils('WAIT_Q')
 
-	def getSchema(self):
-		return self._schema
-
 	def addStep(self, root):  # root must be an instance of PipelineSchema
 		if self.hasStep(root.name):
 			raise ValueError("Pipeline already contains a step with name {n}".format(n=root.name))
@@ -329,6 +328,8 @@ class PipelineBuilder(object):
 			exit(-1)
 
 	def _submitSchema(self):
+		pprint.pprint(self._schema)
+
 		jobIdMap = {}
 
 		for p in self._schema["pipelines"]:  # Add all jobs to the jobs table
