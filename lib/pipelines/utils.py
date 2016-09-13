@@ -328,8 +328,6 @@ class PipelineBuilder(object):
 			exit(-1)
 
 	def _submitSchema(self):
-		pprint.pprint(self._schema)
-
 		jobIdMap = {}
 
 		for p in self._schema["pipelines"]:  # Add all jobs to the jobs table
@@ -355,6 +353,8 @@ class PipelineBuilder(object):
 				"job_id": jobIdMap[p["name"]],
 				"request": p["request"]
 			}
+
+			pprint.pprint(msg)
 
 			if len(parents) == 0:
 				self._pipelineQueueUtils.publish(json.dumps(msg))
