@@ -73,7 +73,7 @@ def main(config):
 
 				currentlyRunning = len(pipelineDbUtils.getJobInfo(select=["job_id"], where={"current_status": "RUNNING"}))
 				maxJobsTest = int(config.max_running_jobs) - (currentlyRunning + 1)
-				cpuTest = cpuTotal - (cpuUsage + body["request"]["pipelineArgs"]["resources"]["minimumCpuCores"])
+				cpuTest = cpuTotal - (cpuUsage + int(body["request"]["pipelineArgs"]["resources"]["minimumCpuCores"]))
 
 				for d in body["request"]["pipelineArgs"]["resources"]["disks"]:
 					if d["type"] == "PERSISTENT_SSD":
