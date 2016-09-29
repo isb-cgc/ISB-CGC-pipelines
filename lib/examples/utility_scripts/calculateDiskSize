@@ -8,6 +8,7 @@ parser = argparse.ArgumentParser()
 grp = parser.add_mutually_exclusive_group(required=True)
 grp.add_argument("--inputFile")
 grp.add_argument("--analysisId")
+grp.add_argument("--inputFileSize")
 parser.add_argument("--scalingFactor", required=False, default=1)
 parser.add_argument("--roundToNearestGbInterval", required=False, default=50)
 args = parser.parse_args()
@@ -16,3 +17,5 @@ if args.inputFile:
 	print DataUtils.calculateDiskSize(inputFile=args.inputFile, scalingFactor=args.scalingFactor, roundToNearestGbInterval=args.roundToNearestGbInterval)
 elif args.analysisId:
 	print DataUtils.calculateDiskSize(analysisId=args.analysisId, scalingFactor=args.scalingFactor, roundToNearestGbInterval=args.roundToNearestGbInterval)
+elif args.inputFileSize:
+	print DataUtils.calculateDiskSize(inputFileSize=args.inputFileSize, scalingFactor=args.scalingFactor, roundToNearestGbInterval=args.roundToNearestGbInterval)

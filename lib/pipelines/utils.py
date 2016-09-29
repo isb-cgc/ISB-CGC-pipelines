@@ -1136,7 +1136,7 @@ class DataUtils(object):
 
 		elif inputFileSize is not None:
 			fileSize = inputFileSize
-			
+
 		elif analysisId is not None:
 			analysisDetail = DataUtils.getAnalysisDetail(analysisId)
 
