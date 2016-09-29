@@ -18,4 +18,4 @@ if args.inputFile:
 elif args.analysisId:
 	print DataUtils.calculateDiskSize(analysisId=args.analysisId, scalingFactor=args.scalingFactor, roundToNearestGbInterval=args.roundToNearestGbInterval)
 elif args.inputFileSize:
-	print DataUtils.calculateDiskSize(inputFileSize=args.inputFileSize, scalingFactor=args.scalingFactor, roundToNearestGbInterval=args.roundToNearestGbInterval)
+	print DataUtils.calculateDiskSize(inputFileSize=int(args.inputFileSize), scalingFactor=args.scalingFactor, roundToNearestGbInterval=args.roundToNearestGbInterval)
