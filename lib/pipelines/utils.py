@@ -1133,7 +1133,10 @@ class DataUtils(object):
 	def calculateDiskSize(inputFile=None, inputFileSize=None, analysisId=None, scalingFactor=None, roundToNearestGbInterval=None):
 		if inputFile is not None:
 			fileSize = int(subprocess.check_output(["gsutil", "du", inputFile]).split(' ')[0])
-		
+
+		elif inputFileSize is not None:
+			fileSize = inputFileSize
+			
 		elif analysisId is not None:
 			analysisDetail = DataUtils.getAnalysisDetail(analysisId)
 
