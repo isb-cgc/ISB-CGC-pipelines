@@ -1,0 +1,1 @@
+# in this file, define variables for each relevant container script in GCS, e.g. FASTQC_SCRIPT = gs://path/to/fastqc.sh

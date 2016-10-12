@@ -1,0 +1,1 @@
+# in this file, define variables for each relevant container path, e.g. FASTQC = gcr.io/my_project/fastqc:latest
