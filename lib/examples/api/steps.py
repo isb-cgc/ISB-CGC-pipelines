@@ -59,7 +59,7 @@ class SamtoolsIndexStep(PipelineStep):
 
 
 class SamtoolsFaidxStep(PipelineStep):
-	def __init__(self, fastaUrl, outputUrl, diskSize, diskType, logsPath, container, scriptUrl, tag, cores, mem):
+	def __init__(self, fastaUrl, outputUrl, diskSize, diskType, logsPath, container, scriptUrl, tag, cores, mem, preemptible):
 		super(PipelineStep, self).__init__()
 
 		fastaFileName = os.path.basename(fastaUrl)
