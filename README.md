@@ -446,6 +446,8 @@ pipeline.run()
 
 A real world example can be found [here](https://raw.githubusercontent.com/isb-cgc/ISB-CGC-pipelines/master/lib/examples/api/incoming-data.py).
 
+Consult the [README](https://github.com/isb-cgc/ISB-CGC-pipelines/tree/master/lib/examples) in the examples directory for additional usage examples.
+
 ## [Future Plans](#future-plans)
 
 More info coming soon!
