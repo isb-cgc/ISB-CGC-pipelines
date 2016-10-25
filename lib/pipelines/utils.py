@@ -1097,7 +1097,7 @@ class PipelineServiceUtils:
 				logging.projects().sinks().get(sinkName=sink).execute()
 			except HttpError as e:
 				try:
-					logging.projects().sinks().create(projectName="projects/{project}".format(project=config.project_id), body=body).execute()
+					logging.projects().sinks().create(parent="projects/{project}".format(project=config.project_id), body=body).execute()
 				except HttpError as e:
 					print "ERROR: couldn't create the {t} log sink : {reason}".format(t=t, reason=e)
 					exit(-1)
