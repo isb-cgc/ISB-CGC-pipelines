@@ -96,19 +96,19 @@ First, update PYTHONPATH:
 
 `export PYTHONPATH=$PYTHONPATH:/usr/local/ISB-CGC-pipelines/lib`
 
-You will also need to add yourself to the `supervisor` user group in order to start and stop the job scheduler:
+Next, you will need to add yourself to the `supervisor` user group in order to start and stop the job scheduler.  To do this run the following command, and then log out and log back in again so that the change will take effect:
 
 ```
-# run the following command, and then log out and log back in again for the change to take effect
-
 sudo usermod -a -G supervisor $USER
 ```
+
+(To verify this, after you log back in, you can type ``groups`` and you should see the `supervisor` group in the list.)
 
 To configure the framework, run the following command and follow the prompts:
 
 `isb-cgc-pipelines config set all`
 
-Most of the given prompts will provide a suitable default value that you can use by simply pressing enter at each prompt.  If you are unsure what to enter for a particular value, the recommended approach is to accept the default value proposed for the given item.  The only exception to this is the value for the GCP project id, which must be provided by you during the configuration process.
+Most of the given prompts will provide a suitable default value that you can use by simply pressing enter at each prompt.  If you are unsure what to enter for a particular value, the recommended approach is to accept the default value proposed for the given item.  The only exception to this is the value for the GCP project id, which must be provided by you during the configuration process.  (**Note** that this needs to be the GCP project **id** not the **name**.  If you go to the [IAM & Admin > Settings page](https://console.cloud.google.com/iam-admin/settings) on the Cloud Console, you will see the Project name, ID, and number listed.  You can also see the project id next to ``project =`` in the output from ``gcloud config list``.)
 
 There is one last configuration step, which is to "bootstrap" the messaging system that underlies the job scheduling/monitoring system.  To initialize this process simply run `isb-cgc-pipelines bootstrap`, which should report a success message if the bootstrap process was successful.  
 
