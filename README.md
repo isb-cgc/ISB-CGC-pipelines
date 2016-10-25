@@ -12,7 +12,7 @@ It is possible to build true (directed, acyclic) "pipelines" using the [advanced
 
 In order to use the ISB-CGC-pipelines tools, the following requirements must be met:
 - You must be an "Owner" or "Editor" of a Google Cloud Project.  Some initial configuration steps will require "Owner" status, but use of the command line tool and underlying API will only require "Editor" status.
-- You must have the following APIs enabled in your Google Cloud Project: Google Compute Engine, Google Genomics, Google Cloud Pub/Sub, Google Cloud Logging
+- You must have the following APIs enabled in your Google Cloud Project: Google Compute Engine, Google Genomics, Google Cloud Pub/Sub, Google Cloud Logging (aka Stackdriver Logging)
 - (Optional) Install the Google Cloud SDK, including "alpha" subcommands for the `gcloud` command.  This step isn't required if you plan to use a Google Compute Engine VM for running the tool.
 
 ## [Helpful Information](#helpful-information)
@@ -29,14 +29,14 @@ Note: The steps in this section require "Owner" status on a Google Cloud Project
 
 Once you've enabled the APIs mentioned above, you will need to modify the permissions for two service accounts within your project: the default "compute" service account, which is created for you by default when you enable the Compute Engine API, and the "cloud-logs" service account, which you may need to create manually  in order to manage some logging tasks associated with your pipeline jobs. 
 
-To determine whether or not the "cloud-logs" service account needs to be created, navigate to the ["IAM & Admin" section of the Cloud Console](https://console.cloud.google.com/iam-admin/projects), select the desired project from the list and check the member listing in that project for the name "cloud-logs@system.gserviceaccount.com".  If that account isn't listed, you can create it by clicking "Add Member" and entering the member name as "cloud-logs@system.gserviceaccount.com".  At this point, you can also select the roles "Editor" and "Pub/Sub Publisher" before clicking "Add".
+To determine whether or not the "cloud-logs" service account needs to be created, navigate to the ["IAM & Admin" section of the Cloud Console](https://console.cloud.google.com/iam-admin/projects), select the desired project from the list and check the member listing in that project for the name "cloud-logs@system.gserviceaccount.com".  If that account isn't listed, you can create it by clicking "Add Member" and entering the member name as "cloud-logs@system.gserviceaccount.com".  At this point, you can also select the roles (Project) "Editor" and "Pub/Sub Publisher" before clicking "Add".
 
 Once both of the required service accounts have been created, they must be granted the roles given in the table below in the "IAM & Admin" section of the Cloud Console:
 
 | Service Account Name | Required Roles |
 | ------ | ------|
-| xxxxxxxxxxxx-compute@developer.gserviceaccount.com | Editor, Logs Configuration Writer, Pub/Sub Admin | 
-| cloud-logs@system.gserviceaccount.com | Editor, Pub/Sub Publisher |
+| xxxxxxxxxxxx-compute@developer.gserviceaccount.com | (Project) Editor, Logs Configuration Writer, Pub/Sub Admin | 
+| cloud-logs@system.gserviceaccount.com | (Project) Editor, Pub/Sub Publisher |
 
 To grant a role to an existing service account, simply click on the dropdown to the right of the particular service account name, check the roles that you wish to grant, and then click "Save".
 
