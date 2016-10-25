@@ -56,7 +56,7 @@ Once the instance is ready, you can ssh to it using the following command:
 gcloud compute ssh my-pipeline-workstation
 ```
 
-For more information about the `gcloud compute` command and all of its possible arguments, please refer to the [documentation](https://cloud.google.com/compute/docs/gcloud-compute/). Also, if you had to select a **zone** in order to start up a GCE VM, you should look at this [information](https://cloud.google.com/compute/docs/regions-zones/regions-zones#choosing_a_region_and_zone) about choosing a default region and zone, and then set your default configuration like this (for example):
+For more information about the `gcloud compute` command and all of its possible arguments, please refer to the [documentation](https://cloud.google.com/compute/docs/gcloud-compute/). Also, if you had to select a **zone** in order to start up a GCE VM (above), you should look at this [information](https://cloud.google.com/compute/docs/regions-zones/regions-zones#choosing_a_region_and_zone) about choosing a default region and zone, and then set your default configuration like this (for example):
 ```
 gcloud config set compute/region us-west1
 gcloud config set compute/zone us-west1-b
