@@ -167,6 +167,18 @@ isb-cgc-pipelines submit --pipelineName fastqc \
 
 ### [Monitoring Tasks](#monitoring-tasks)
 
+To see the status of all tasks ever submitted, run the following command:
+
+```
+isb-cgc-pipelines list jobs
+```
+
+To limit the number of responses in a given query, you can also provide the "--limit" flag:
+
+```
+isb-cgc-pipelines list jobs --limit 50
+```
+
 To see the status of all tasks with a particular pipeline name at a glance, run the following command:
 
 ```
