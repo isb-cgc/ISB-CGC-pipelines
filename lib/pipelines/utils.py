@@ -756,12 +756,17 @@ class PipelineSchedulerUtils(object):
 		parser.add_argument("--tag")
 		parser.add_argument("--status", choices=["running", "waiting", "succeeded", "failed", "error", "preempted"])
 		parser.add_argument("--createTimeAfter")
-		parser.add_argument("--limit", default=50)
+		parser.add_argument("--limit")
 
 		args = parser.parse_args(args=unknown, namespace=args)
 
 		select = ["job_id", "operation_id", "pipeline_name", "tag", "current_status", "create_time", "preemptions"]
-		where = {}
+
+		if not args.pipeline and not args.tag and not args.status and not args.createTimeAfter:
+			where = None
+
+		else:
+			where = {}
 
 		if args.pipeline:
 			where["pipeline_name"] = args.pipeline
@@ -939,7 +944,7 @@ class PipelineDbUtils(object):
 	def getChildJobs(self, parentId):
 		return self._pipelinesDb.execute("SELECT child_id FROM job_dependencies WHERE parent_id = ?", (parentId,)).fetchall()
 
-	def getJobInfo(self, select=None, where=None, operation="intersection"):  # select -> list, where -> dict
+	def getJobInfo(self, select=None, where=None, limit=None, operation="intersection"):  # select -> list, where -> dict
 		class JobInfo(object):
 			def __init__(self, innerDict):
 				self.__dict__.update(innerDict)
@@ -981,6 +986,13 @@ class PipelineDbUtils(object):
 			whereString = ' {op} '.format(op=operations[operation]).join(whereArray)
 
 			params.extend(valueArray)
+
+		if limit is None:
+			pass
+
+		else:
+			query += " LIMIT {l}".format(l=limit)
+
 
 		jobsInfo = self._pipelinesDb.execute(query.format(select=selectString, where=whereString), tuple(params)).fetchall()
 
