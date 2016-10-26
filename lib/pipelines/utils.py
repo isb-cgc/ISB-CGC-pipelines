@@ -405,7 +405,7 @@ class PipelinesConfig(SafeConfigParser, object):
 			"zones": {
 				"section": "gcp",
 				"required": True,
-				"default": "us-central1-a,us-central1-b,us-central1-c,us-central1-f,us-east1-b,us-east1-c,us-east1-d",
+				"default": "us-central1-a,us-central1-b,us-central1-c,us-central1-f,us-east1-b,us-east1-c,us-east1-d,us-west1-a,us-west1-b",
 				"message": "Enter a comma-delimited list of GCE zones (leave blank to use the default list of all US zones): "
 			},
 			"scopes": {
