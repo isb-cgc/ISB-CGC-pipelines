@@ -783,7 +783,7 @@ class PipelineSchedulerUtils(object):
 				"operator": ">="
 			}
 
-		jobs = pipelineDbUtils.getJobInfo(select=select, where=where)
+		jobs = pipelineDbUtils.getJobInfo(select=select, where=where, limit=args.limit)
 
 		pipelineDbUtils.closeConnection()
 
