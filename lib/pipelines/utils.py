@@ -378,7 +378,7 @@ class PipelineBuilder(object):
 				"request": p["request"]
 			}
 
-			pprint.pprint(msg)
+			#pprint.pprint(msg)
 
 			if len(parents) == 0:
 				self._pipelineQueueUtils.publish(json.dumps(msg))
