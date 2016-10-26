@@ -527,6 +527,14 @@ class PipelinesConfigUpdateHandler(pyinotify.ProcessEvent):
 class PipelineSchedulerUtils(object):
 	@staticmethod
 	def startScheduler(config, user):
+		# ensure that the rabbitmq service is running
+		try:
+			subprocess.check_call(["sudo", "service", "rabbitmq-service", "restart"])
+
+		except subprocess.CalledProcessError as e:
+			print "ERROR: couldn't start the scheduler (rabbitmq): {reason}".format(reason=e)
+			exit(-1)
+
 		# set up the rabbitmq queues
 		rabbitmqConn = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
 		channel = rabbitmqConn.channel()
@@ -634,6 +642,13 @@ class PipelineSchedulerUtils(object):
 
 		except subprocess.CalledProcessError as e:
 			print "ERROR: couldn't stop the scheduler (supervisor): {reason}".format(reason=e)
+			exit(-1)
+
+		try:
+			subprocess.check_call(["sudo", "service", "rabbitmq-service", "stop"])
+
+		except subprocess.CalledProcessError as e:
+			print "ERROR: couldn't stop the scheduler (rabbitmq): {reason}".format(reason=e)
 			exit(-1)
 
 		print "Scheduler stopped successfully!"
