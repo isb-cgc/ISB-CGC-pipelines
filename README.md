@@ -44,13 +44,13 @@ To grant a role to an existing service account, simply click on the dropdown to 
 
 ### Method 1: Cloud Installation
 
-The easiest way to set up the ISB-CGC-pipelines framework is to use the tool's Compute Engine startup script to bootstrap a the workstation.  To do this, you can run the following command (or a variation thereof) to create the workstation with the appropriate scopes:
+The easiest way to set up the ISB-CGC-pipelines framework is to use the tool's Google Compute Engine (GCE) startup script to bootstrap a the workstation.  To do this, you can run the following command (or a variation thereof) to create the workstation with the appropriate scopes:
 
 ```
 gcloud compute instances create my-pipeline-workstation --metadata startup-script-url=gs://isb-cgc-open/vm-startup-scripts/isb-cgc-pipelines-startup.sh --scopes cloud-platform
 ```
 
-Once the instance is ready, you can ssh to it using the following command:
+Note you can run the above from anywhere you have the [Cloud SDK](https://cloud.google.com/sdk/) installed.  If you have your [Cloud Console](https://console.cloud.google.com) open in your browser, one convenient way to make use of the cloud SDK is to launch the [Cloud Shell](https://cloud.google.com/shell/docs/).  Once the ``my-pipeline-workstation`` instance is ready, you can ``ssh`` to it using the following command:
 
 ```
 gcloud compute ssh my-pipeline-workstation
@@ -66,6 +66,7 @@ You can vew your configuration by running:
 gcloud config list
 ```
 
+One difference you might notice between your ``configuration`` in the Cloud Shell, or when you are running on your local workstation, for example and when you ssh to a GCE VM, is that the name shown next to ``account = `` will be different.  When you ``ssh`` to a GCE VM, your identity, by default, will be that of your project's "compute" service account rather than your personal identity.  Access to objects in Cloud Storage or datasets in Google Genomics is granted to one or more specific "identities" or groups, so it is important to understand which "identity" you are using at any given time, especially if you are encountering unexpected access issues.  In general, you should prefer to use a "service account identity" whenever possible, rather than your *personal* identity. 
 
 ### Method 2: Local Installation
 
@@ -88,15 +89,11 @@ Note that you must have root privileges on whatever system you choose to install
 
 ## [Basic Usage](#basic-usage)
 
-The most basic way to use the tool is to use the built-in command line utility, `isb-cgc-pipelines`.  The following sections will describe what the various subcommands do, but you can run `isb-cgc-pipelines -h` at any time to print usage information.
+The most straightforward way to use the tool is to use the built-in command line utility, `isb-cgc-pipelines`.  The following sections will describe what the various subcommands do, but you can run `isb-cgc-pipelines -h` at any time to print usage information.
 
 ### [Configuration](#configuration)
 
-First, update PYTHONPATH:
-
-`export PYTHONPATH=$PYTHONPATH:/usr/local/ISB-CGC-pipelines/lib`
-
-Next, you will need to add yourself to the `supervisor` user group in order to start and stop the job scheduler.  To do this run the following command, and then log out and log back in again so that the change will take effect:
+First, you will need to add yourself to the `supervisor` user group in order to start and stop the job scheduler.  To do this run the following command, and then log out and log back in again so that the change will take effect:
 
 ```
 sudo usermod -a -G supervisor $USER
@@ -104,11 +101,15 @@ sudo usermod -a -G supervisor $USER
 
 (To verify this, after you log back in, you can type ``groups`` and you should see the `supervisor` group in the list.)
 
-To configure the framework, run the following command and follow the prompts:
+Next, you need to set/update PYTHONPATH to include the ISB-CGC-pipelines modules:
+
+`export PYTHONPATH=$PYTHONPATH:/usr/local/ISB-CGC-pipelines/lib`
+
+Now you can configure the ISB-CGC-pipelines framework, by running the following command and following the prompts:
 
 `isb-cgc-pipelines config set all`
 
-Most of the given prompts will provide a suitable default value that you can use by simply pressing enter at each prompt.  If you are unsure what to enter for a particular value, the recommended approach is to accept the default value proposed for the given item.  The only exception to this is the value for the GCP project id, which must be provided by you during the configuration process.  (**Note** that this needs to be the GCP project **id** not the **name**.  If you go to the [IAM & Admin > Settings page](https://console.cloud.google.com/iam-admin/settings) on the Cloud Console, you will see the Project name, ID, and number listed.  You can also see the project id next to ``project =`` in the output from ``gcloud config list``.)
+Most of the given prompts will provide a suitable default value that you can use by simply pressing enter at each prompt.  If you are unsure what to enter for a particular value, accept the default value.  The only exception to this is the value for the GCP project id, which must be provided by you during the configuration process.  (**Note** that this needs to be the GCP project **id** not the **name**.  If you go to the [IAM & Admin > Settings page](https://console.cloud.google.com/iam-admin/settings) on the Cloud Console, you will see the Project name, ID, and number listed.  You can also see the project id next to ``project =`` in the output from ``gcloud config list``.)
 
 There is one last configuration step, which is to "bootstrap" the messaging system that underlies the job scheduling/monitoring system.  To initialize this process simply run `isb-cgc-pipelines bootstrap`, which should report a success message if the bootstrap process was successful.  
 
