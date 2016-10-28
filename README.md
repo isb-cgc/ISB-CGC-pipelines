@@ -93,13 +93,13 @@ The most straightforward way to use the tool is to use the built-in command line
 
 ### [Configuration](#configuration)
 
-First, you will need to add yourself to the `supervisor` user group in order to start and stop the job scheduler.  To do this run the following command, and then log out and log back in again so that the change will take effect:
+First, you will need to add yourself to the `supervisor` user group in order to start and stop the job scheduler.  To do this run the following command, **and then log out and log back in again** so that the change will take effect:
 
 ```
 sudo usermod -a -G supervisor $USER
 ```
 
-(To verify this, after you log back in, you can type ``groups`` and you should see the `supervisor` group in the list.)
+(To verify this, **after you log back in**, you can type ``groups`` and you should see the `supervisor` group in the list.)
 
 Next, you need to set/update PYTHONPATH to include the ISB-CGC-pipelines modules:
 
