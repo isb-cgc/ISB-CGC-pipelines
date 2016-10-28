@@ -529,7 +529,7 @@ class PipelineSchedulerUtils(object):
 	def startScheduler(config, user):
 		# ensure that the rabbitmq service is running
 		try:
-			subprocess.check_call(["sudo", "service", "rabbitmq-service", "restart"])
+			subprocess.check_call(["sudo", "service", "rabbitmq-server", "restart"])
 
 		except subprocess.CalledProcessError as e:
 			print "ERROR: couldn't start the scheduler (rabbitmq): {reason}".format(reason=e)
@@ -645,7 +645,7 @@ class PipelineSchedulerUtils(object):
 			exit(-1)
 
 		try:
-			subprocess.check_call(["sudo", "service", "rabbitmq-service", "stop"])
+			subprocess.check_call(["sudo", "service", "rabbitmq-server", "stop"])
 
 		except subprocess.CalledProcessError as e:
 			print "ERROR: couldn't stop the scheduler (rabbitmq): {reason}".format(reason=e)
