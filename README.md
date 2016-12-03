@@ -111,7 +111,11 @@ Now you can configure the ISB-CGC-pipelines framework, by running the following 
 
 Most of the given prompts will provide a suitable default value that you can use by simply pressing enter at each prompt.  If you are unsure what to enter for a particular value, accept the default value.  The only exception to this is the value for the GCP project id, which must be provided by you during the configuration process.  (**Note** that this needs to be the GCP project **id** not the **name**.  If you go to the [IAM & Admin > Settings page](https://console.cloud.google.com/iam-admin/settings) on the Cloud Console, you will see the Project name, ID, and number listed.  You can also see the project id next to ``project =`` in the output from ``gcloud config list``.)
 
-There is one last configuration step, which is to "bootstrap" the messaging system that underlies the job scheduling/monitoring system.  To initialize this process simply run `isb-cgc-pipelines bootstrap`, which should report a success message if the bootstrap process was successful.  
+There is one last configuration step, which is to "bootstrap" the messaging system that underlies the job scheduling/monitoring system.  To initialize this process simply run 
+
+`isb-cgc-pipelines bootstrap`
+
+which should report a success message if the bootstrap process was successful.  
 
 If you run into problems with the messaging bootstrap process, double check that you have set permissions appropriately for your service accounts (mentioned above in a previous section).
 
