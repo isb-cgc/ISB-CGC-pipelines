@@ -27,7 +27,7 @@ while read bamFile; do
 	isb-cgc-pipelines submit --pipelineName fastqc \
 		--inputs "${bamFile}:${bamFileName},${baiFile}:${baiFileName}" \
 		--outputs "*_fastqc.zip:${outputPath},*_fastqc.html:${outputPath}" \
-		--scriptUrl gs://isb-cgc-open/compute-helpers/pipeline-scripts/fastqc.sh \
+		--scriptUrl gs://isb-cgc-misc/compute-helpers/pipeline-scripts/fastqc.sh \
 		--imageName b.gcr.io/isb-cgc-public-docker-images/fastqc \
 		--cores 1 --mem 2 \
 		--env INPUT_FILENAME="${bamFileName}" \
