@@ -47,7 +47,7 @@ To grant a role to an existing service account, simply click on the dropdown to 
 The easiest way to set up the ISB-CGC-pipelines framework is to use the tool's Google Compute Engine (GCE) startup script to bootstrap a the workstation.  To do this, you can run the following command (or a variation thereof) to create the workstation with the appropriate scopes:
 
 ```
-gcloud compute instances create my-pipeline-workstation --metadata startup-script-url=gs://isb-cgc-open/vm-startup-scripts/isb-cgc-pipelines-startup.sh --scopes cloud-platform
+gcloud compute instances create my-pipeline-workstation --metadata startup-script-url=gs://isb-cgc-misc/compute-helpers/vm-startup-scripts/isb-cgc-pipelines-startup.sh --scopes cloud-platform
 ```
 
 Note you can run the above from anywhere you have the [Cloud SDK](https://cloud.google.com/sdk/) installed.  If you have your [Cloud Console](https://console.cloud.google.com) open in your browser, one convenient way to make use of the cloud SDK is to launch the [Cloud Shell](https://cloud.google.com/shell/docs/).  Once the ``my-pipeline-workstation`` instance is ready, you can ``ssh`` to it using the following command:
@@ -160,7 +160,7 @@ Here is an example command that will submit a "fastqc" task, which will use an o
 
 ```
 isb-cgc-pipelines submit --pipelineName fastqc \
-                --inputs gs://isb-cgc-open/ccle/BRCA/DNA-Seq/C836.MDA-MB-436.1.bam:C836.MDA-MB-436.1.bam,gs://isb-cgc-open/ccle/BRCA/DNA-Seq/C836.MDA-MB-436.1.bam.bai:C836.MDA-MB-436.1.bam.bai \
+                --inputs gs://isb-cgc-open/NCI-GDC/legacy/CCLE/CCLE-BRCA/WXS/Aligned_reads/de678354-28c5-4d95-a89f-b6ae09162bcc/C836.MDA-MB-436.1.bam:C836.MDA-MB-436.1.bam,gs://isb-cgc-open/NCI-GDC/legacy/CCLE/CCLE-BRCA/WXS/Aligned_reads/de678354-28c5-4d95-a89f-b6ae09162bcc/C836.MDA-MB-436.1.bam.bai:C836.MDA-MB-436.1.bam.bai \
                 --outputs "*_fastqc.zip:gs://<YOUR_GCS_OUTPUT_PATH>,*_fastqc.html:gs://<YOUR_GCS_OUTPUT_PATH>" \
                 --cmd "fastqc C836.MDA-MB-436.1.bam" \
                 --imageName b.gcr.io/isb-cgc-public-docker-images/fastqc \
